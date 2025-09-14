@@ -1,356 +1,310 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
-import { Progress } from './ui/progress';
 import { Slider } from './ui/slider';
-import { Volume2, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
+import { Progress } from './ui/progress';
+import { Volume2, Play, Pause, StopCircle, SkipForward, SkipBack } from 'lucide-react';
 import { useLearning } from './LearningContext';
 
-export function TextToSpeechMode() {
+/**
+ * TextToSpeechMode
+ *
+ * This component leverages the Web Speech API to read an array of sentences
+ * aloud.  Learners can control playback (play/pause/stop), skip between
+ * sentences, adjust the speech rate and monitor progress.  The current
+ * sentence is highlighted in the text.  Progress (currentSentence and
+ * playbackTime) is persisted via the LearningContext.
+ */
+
+export function TextToSpeechMode(): JSX.Element {
   const { readingProgress, updateProgress } = useLearning();
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState([1.0]);
-  const [progress, setProgress] = useState(0);
-  const [currentSentence, setCurrentSentence] = useState(readingProgress.audioText.currentSentence);
+  const [speed, setSpeed] = useState(1.0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [isSupported, setIsSupported] = useState(true);
+  const [currentSentence, setCurrentSentence] = useState(readingProgress.audioText.currentSentence);
+  const [supported, setSupported] = useState(true);
 
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Text content divided into sentences for better control
+  // Text content divided into sentences for granular control and highlighting
   const textContent = [
-    "Mitochondria are double-membraned organelles found in most eukaryotic cells.",
-    "They are often called the powerhouses of the cell because they generate most of the cell's supply of adenosine triphosphate, or ATP, which is used as a source of chemical energy.",
-    "The structure of mitochondria includes an outer membrane and an inner membrane with extensive folds called cristae.",
-    "These cristae increase the surface area available for chemical reactions, particularly those involved in cellular respiration.",
-    "Mitochondria have their own DNA and can reproduce independently of the cell.",
-    "This suggests that mitochondria were once free-living bacteria that formed a symbiotic relationship with early eukaryotic cells."
+    'Mitochondria are double‑membraned organelles found in most eukaryotic cells.',
+    'They are often called the powerhouses of the cell because they generate most of the cell’s supply of adenosine triphosphate, or ATP, which is used as a source of chemical energy.',
+    'The structure of mitochondria includes an outer membrane and an inner membrane with extensive folds called cristae.',
+    'These cristae increase the surface area available for chemical reactions, particularly those involved in cellular respiration.',
+    'Mitochondria have their own DNA and can reproduce independently of the cell.',
+    'This suggests that mitochondria were once free‑living bacteria that formed a symbiotic relationship with early eukaryotic cells.',
   ];
 
-  // Update context when progress changes
-  useEffect(() => {
-    updateProgress('audioText', {
-      currentSentence,
-      totalSentences: textContent.length,
-      playbackTime: currentTime
-    });
-  }, [currentSentence, currentTime, updateProgress]);
-
-  // Check for Speech Synthesis support
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) {
-      setIsSupported(false);
-      return;
-    }
-    synthRef.current = window.speechSynthesis;
-  }, []);
-
-  // Format time display
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Calculate estimated duration based on text length and speed
+  // Compute the estimated duration based on total characters and reading speed
   const calculateDuration = useCallback(() => {
     const totalChars = textContent.join(' ').length;
-    // Estimate: average 5 characters per second at normal speed
-    const estimatedDuration = (totalChars / 5) / speed[0];
-    setDuration(estimatedDuration);
+    // Estimate that at normal speed (1x) about 5 characters are spoken per second
+    const estimatedSeconds = totalChars / (5 * speed);
+    setDuration(estimatedSeconds);
   }, [speed, textContent]);
 
   useEffect(() => {
     calculateDuration();
   }, [calculateDuration]);
 
-  // Start progress tracking
-  const startProgressTracking = () => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
+  // Persist current sentence and playback time via context
+  useEffect(() => {
+    updateProgress('audioText', {
+      currentSentence,
+      totalSentences: textContent.length,
+      playbackTime: currentTime,
+    });
+  }, [currentSentence, currentTime, updateProgress, textContent.length]);
+
+  // Initialise speech synthesis
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) {
+      setSupported(false);
+      return;
     }
-    
-    progressIntervalRef.current = setInterval(() => {
-      setCurrentTime(prev => {
-        const newTime = prev + 1;
-        const newProgress = duration > 0 ? (newTime / duration) * 100 : 0;
-        setProgress(Math.min(newProgress, 100));
-        return newTime;
-      });
-    }, 1000);
-  };
+    synthRef.current = window.speechSynthesis;
+  }, []);
 
-  // Stop progress tracking
-  const stopProgressTracking = () => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  };
-
-  // Play text
-  const playText = () => {
-    if (!synthRef.current || !isSupported) return;
-
-    // Stop any current speech
-    synthRef.current.cancel();
-
-    const textToSpeak = textContent.slice(currentSentence).join(' ');
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    
-    utterance.rate = speed[0];
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    utterance.onstart = () => {
-      setIsPlaying(true);
-      startProgressTracking();
-    };
-
-    utterance.onend = () => {
-      setIsPlaying(false);
-      stopProgressTracking();
-      setCurrentSentence(0);
-      setCurrentTime(0);
-      setProgress(0);
-    };
-
-    utterance.onerror = () => {
-      setIsPlaying(false);
-      stopProgressTracking();
-    };
-
-    utterance.onboundary = (event) => {
-      // Update current sentence based on character position
-      if (event.name === 'sentence') {
-        let charCount = 0;
-        for (let i = 0; i < textContent.length; i++) {
-          charCount += textContent[i].length + 1; // +1 for space
-          if (charCount > event.charIndex) {
-            setCurrentSentence(i);
-            break;
-          }
-        }
-      }
-    };
-
-    utteranceRef.current = utterance;
-    synthRef.current.speak(utterance);
-  };
-
-  // Pause/Resume speech
-  const togglePlayback = () => {
-    if (!synthRef.current || !isSupported) return;
-
-    if (isPlaying) {
-      if (synthRef.current.speaking) {
-        synthRef.current.pause();
-        stopProgressTracking();
-        setIsPlaying(false);
-      }
-    } else {
-      if (synthRef.current.paused) {
-        synthRef.current.resume();
-        startProgressTracking();
-        setIsPlaying(true);
-      } else {
-        playText();
-      }
-    }
-  };
-
-  // Stop speech
-  const stopSpeech = () => {
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-    setIsPlaying(false);
-    stopProgressTracking();
-    setCurrentSentence(0);
-    setCurrentTime(0);
-    setProgress(0);
-  };
-
-  // Skip forward
-  const skipForward = () => {
-    if (currentSentence < textContent.length - 1) {
-      setCurrentSentence(prev => prev + 1);
-      if (isPlaying) {
-        stopSpeech();
-        setTimeout(() => playText(), 100);
-      }
-    }
-  };
-
-  // Skip backward
-  const skipBackward = () => {
-    if (currentSentence > 0) {
-      setCurrentSentence(prev => prev - 1);
-      if (isPlaying) {
-        stopSpeech();
-        setTimeout(() => playText(), 100);
-      }
-    }
-  };
-
-  // Handle speed change
-  const handleSpeedChange = (newSpeed: number[]) => {
-    setSpeed(newSpeed);
-    calculateDuration();
-    
-    if (isPlaying && utteranceRef.current) {
-      // Need to restart with new speed
-      const wasPlaying = isPlaying;
-      stopSpeech();
-      if (wasPlaying) {
-        setTimeout(() => playText(), 100);
-      }
-    }
-  };
-
-  // Cleanup on unmount
+  // Clean up on unmount
   useEffect(() => {
     return () => {
-      stopProgressTracking();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
       if (synthRef.current) {
         synthRef.current.cancel();
       }
     };
   }, []);
 
-  if (!isSupported) {
+  /**
+   * Start tracking playback time.  Updates the currentTime state every second.
+   */
+  const startTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCurrentTime(prev => prev + 1);
+    }, 1000);
+  };
+
+  /**
+   * Stop playback time tracking.
+   */
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  /**
+   * Play the remaining text starting from the current sentence.  Creates a
+   * single utterance and sets event handlers to update the state on
+   * boundary events.
+   */
+  const play = () => {
+    if (!synthRef.current || !supported) return;
+    // Cancel any existing speech
+    synthRef.current.cancel();
+    // Build the utterance
+    const utter = new SpeechSynthesisUtterance(textContent.slice(currentSentence).join(' '));
+    utter.rate = speed;
+    utter.onstart = () => {
+      setIsPlaying(true);
+      startTimer();
+    };
+    utter.onend = () => {
+      setIsPlaying(false);
+      stopTimer();
+      setCurrentSentence(0);
+      setCurrentTime(0);
+    };
+    utter.onerror = () => {
+      setIsPlaying(false);
+      stopTimer();
+    };
+    // Update the current sentence as speech progresses
+    utter.onboundary = event => {
+      if (event.name === 'word') {
+        // Determine which sentence boundary we crossed based on character index
+        let chars = 0;
+        for (let i = 0; i < textContent.length; i++) {
+          chars += textContent[i].length + 1; // +1 for space
+          if (chars > event.charIndex) {
+            setCurrentSentence(i);
+            break;
+          }
+        }
+      }
+    };
+    utteranceRef.current = utter;
+    synthRef.current.speak(utter);
+  };
+
+  /**
+   * Pause or resume playback.  If paused, resume from the current position.
+   */
+  const togglePlayPause = () => {
+    if (!synthRef.current) return;
+    if (isPlaying) {
+      synthRef.current.pause();
+      stopTimer();
+      setIsPlaying(false);
+    } else {
+      if (synthRef.current.paused) {
+        synthRef.current.resume();
+        startTimer();
+        setIsPlaying(true);
+      } else {
+        play();
+      }
+    }
+  };
+
+  /**
+   * Stop playback entirely and reset state.
+   */
+  const stop = () => {
+    if (!synthRef.current) return;
+    synthRef.current.cancel();
+    stopTimer();
+    setIsPlaying(false);
+    setCurrentSentence(0);
+    setCurrentTime(0);
+  };
+
+  /**
+   * Skip forward to the next sentence.  If playing, restart speech from the
+   * new position.
+   */
+  const skipForward = () => {
+    setCurrentSentence(prev => {
+      const next = Math.min(prev + 1, textContent.length - 1);
+      return next;
+    });
+    if (isPlaying) {
+      stop();
+      setTimeout(() => play(), 100);
+    }
+  };
+
+  /**
+   * Skip back to the previous sentence.  If playing, restart speech from
+   * the new position.
+   */
+  const skipBack = () => {
+    setCurrentSentence(prev => {
+      const next = Math.max(prev - 1, 0);
+      return next;
+    });
+    if (isPlaying) {
+      stop();
+      setTimeout(() => play(), 100);
+    }
+  };
+
+  /**
+   * Change the speech rate.  Changing the rate while playing requires
+   * cancelling the current utterance and restarting playback.  We use a
+   * callback to avoid recreating the handler on every render.
+   */
+  const handleSpeedChange = (val: number) => {
+    setSpeed(val);
+    calculateDuration();
+    if (isPlaying) {
+      stop();
+      setTimeout(() => play(), 100);
+    }
+  };
+
+  // Format time in mm:ss
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  if (!supported) {
     return (
-      <Card className="p-6 bg-white">
-        <div className="space-y-6">
-          <div className="flex items-center space-x-3">
-            <Volume2 className="w-6 h-6 text-red-600" />
-            <div>
-              <h3>Text-to-Speech Mode</h3>
-              <p className="text-sm text-red-600">Text-to-Speech is not supported in your browser</p>
-            </div>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg border-l-4 border-red-400">
-            <p className="text-red-800">
-              Your browser doesn't support the Web Speech API. Please try using a modern browser like Chrome, Firefox, or Safari.
-            </p>
-          </div>
-        </div>
+      <Card className="p-6">
+        <h2 className="text-xl font-semibold mb-2 flex items-center space-x-2">
+          <Volume2 className="w-5 h-5" /> <span>Text‑to‑Speech Mode</span>
+        </h2>
+        <p>Your browser does not support the Web Speech API. Please try a modern browser such as Chrome or Firefox.</p>
       </Card>
     );
   }
 
   return (
-    <Card className="p-6 bg-white">
-      <div className="space-y-6">
-        <div className="flex items-center space-x-3">
-          <Volume2 className="w-6 h-6 text-green-600" />
-          <div>
-            <h3>Text-to-Speech Mode</h3>
-            <p className="text-sm text-gray-600">Listen to content with adjustable speed and highlighting</p>
-          </div>
+    <div className="space-y-6">
+      <Card className="p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold flex items-center space-x-2">
+            <Volume2 className="w-5 h-5" /> <span>Text‑to‑Speech Mode</span>
+          </h2>
         </div>
-
-        {/* Audio Controls */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="flex items-center justify-center space-x-4 mb-4">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={skipBackward}
-              disabled={currentSentence === 0}
-            >
-              <SkipBack className="w-4 h-4" />
-            </Button>
-            <Button onClick={togglePlayback} size="lg" className="w-16 h-16 rounded-full">
-              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={skipForward}
-              disabled={currentSentence >= textContent.length - 1}
-            >
-              <SkipForward className="w-4 h-4" />
-            </Button>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Progress</span>
-                <span>{formatTime(currentTime)} / {formatTime(duration)}</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Speed:</span>
-              <Slider
-                value={speed}
-                onValueChange={handleSpeedChange}
-                max={2}
-                min={0.5}
-                step={0.1}
-                className="flex-1"
-              />
-              <span className="text-sm text-gray-600 min-w-[3rem]">{speed[0]}x</span>
-            </div>
-          </div>
+        {/* Controls */}
+        <div className="flex items-center space-x-2 mb-4">
+          <Button size="icon" onClick={togglePlayPause}>
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+          </Button>
+          <Button size="icon" onClick={stop}>
+            <StopCircle className="w-5 h-5" />
+          </Button>
+          <Button size="icon" onClick={skipBack} disabled={currentSentence === 0}>
+            <SkipBack className="w-5 h-5" />
+          </Button>
+          <Button size="icon" onClick={skipForward} disabled={currentSentence >= textContent.length - 1}>
+            <SkipForward className="w-5 h-5" />
+          </Button>
         </div>
-
-        {/* Text with Highlighting */}
-        <div className="prose max-w-none">
-          <h4>Mitochondria: The Cell's Powerhouse</h4>
-          
-          <div className="space-y-3">
-            {textContent.map((sentence, index) => (
-              <p 
-                key={index} 
-                className={`transition-all duration-300 ${
-                  index === currentSentence && isPlaying 
-                    ? 'bg-yellow-200 px-2 py-1 rounded border-l-4 border-yellow-400' 
-                    : index < currentSentence && isPlaying
-                    ? 'text-gray-500'
-                    : ''
-                }`}
-              >
-                {sentence}
-              </p>
-            ))}
-          </div>
-
-          <div className="bg-green-50 p-4 rounded-lg border-l-4 border-green-400 mt-6">
-            <p className="text-green-800">
-              <strong>Audio Focus Tip:</strong> Close your eyes and visualize the concepts as you listen. 
-              This can help improve retention and understanding.
+        {/* Speed Slider */}
+        <div className="mb-4">
+          <label htmlFor="speed" className="block text-sm font-semibold mb-1">
+            Speed: {speed.toFixed(1)}×
+          </label>
+          <Slider
+            id="speed"
+            min={0.5}
+            max={2.0}
+            step={0.1}
+            value={speed}
+            onChange={val => handleSpeedChange(val as number)}
+          />
+        </div>
+        {/* Progress bar */}
+        <div className="mb-4">
+          <Progress value={duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0} />
+          <p className="text-sm text-gray-500 mt-1">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </p>
+        </div>
+        {/* Text Display with Highlighting */}
+        <div className="space-y-2">
+          {textContent.map((sentence, idx) => (
+            <p
+              key={idx}
+              className={`transition-colors ${idx === currentSentence ? 'bg-blue-50 border-l-4 border-blue-500 pl-2' : ''}`}
+            >
+              {sentence}
             </p>
-          </div>
+          ))}
         </div>
-
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            Progress: Sentence {currentSentence + 1} of {textContent.length} 
-            ({Math.round(((currentSentence + 1) / textContent.length) * 100)}% complete)
-          </div>
-          <div className="flex space-x-2">
-            <Button 
-              variant="outline" 
-              onClick={stopSpeech}
-              disabled={!isPlaying}
-            >
-              Stop
-            </Button>
-            <Button variant="outline" onClick={() => {
-              setCurrentSentence(0);
-              updateProgress('audioText', { currentSentence: 0, playbackTime: 0 });
-            }}>
-              Reset
-            </Button>
-          </div>
+        {/* Status */}
+        <div className="mt-4 text-sm text-gray-500">
+          <p>
+            Sentence {currentSentence + 1} of {textContent.length} ({
+              Math.round(((currentSentence + 1) / textContent.length) * 100)
+            }
+            %)
+          </p>
         </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

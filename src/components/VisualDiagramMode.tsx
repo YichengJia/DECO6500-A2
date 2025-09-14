@@ -1,164 +1,207 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Eye, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Slider } from './ui/slider';
+import { ZoomIn, ZoomOut, RotateCcw, Eye } from 'lucide-react';
+import { useLearning } from './LearningContext';
 
-export function VisualDiagramMode() {
-  const [selectedComponent, setSelectedComponent] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(100);
+/**
+ * VisualDiagramMode
+ *
+ * This component renders an interactive diagram of a eukaryotic cell.  Users
+ * can zoom in and out, reset the view and select individual organelles to
+ * reveal details about their structure and function.  Time spent exploring
+ * the diagram contributes to visual learning progress.
+ */
 
-  const cellComponents = [
-    { id: 'nucleus', name: 'Nucleus', description: 'Contains genetic material and controls cell activities', color: 'bg-blue-500' },
-    { id: 'mitochondria', name: 'Mitochondria', description: 'Powerhouse of the cell, produces ATP', color: 'bg-red-500' },
-    { id: 'membrane', name: 'Cell Membrane', description: 'Controls what enters and exits the cell', color: 'bg-green-500' },
-    { id: 'cytoplasm', name: 'Cytoplasm', description: 'Gel-like substance that fills the cell', color: 'bg-yellow-500' }
-  ];
+interface Organelle {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  x: number;
+  y: number;
+}
+
+// Define the organelles and their positions within the diagram.  The
+// coordinates are percentages relative to the container size.
+const organelles: Organelle[] = [
+  {
+    id: 'membrane',
+    name: 'Cell Membrane',
+    description:
+      'Controls what enters and exits the cell. Composed of a phospholipid bilayer with embedded proteins.',
+    color: 'bg-green-500',
+    x: 50,
+    y: 50,
+  },
+  {
+    id: 'nucleus',
+    name: 'Nucleus',
+    description:
+      'Contains genetic material and controls cellular activities. Surrounded by a nuclear envelope with pores.',
+    color: 'bg-blue-500',
+    x: 30,
+    y: 40,
+  },
+  {
+    id: 'mitochondria',
+    name: 'Mitochondrion',
+    description:
+      'Powerhouse of the cell. Produces ATP through cellular respiration. Has an inner membrane folded into cristae.',
+    color: 'bg-red-500',
+    x: 70,
+    y: 60,
+  },
+  {
+    id: 'cytoplasm',
+    name: 'Cytoplasm',
+    description:
+      'Gel‑like substance filling the cell. Site of many metabolic reactions and houses organelles.',
+    color: 'bg-yellow-500',
+    x: 55,
+    y: 30,
+  },
+];
+
+export function VisualDiagramMode(): JSX.Element {
+  const { readingProgress, updateProgress } = useLearning();
+  const [selected, setSelected] = useState<Organelle | null>(null);
+  const [zoom, setZoom] = useState(1); // 1 = 100%
+  const diagramRef = useRef<HTMLDivElement>(null);
+
+  // Track time spent on the visual mode
+  useEffect(() => {
+    const interval = setInterval(() => {
+      updateProgress('visual', { viewTime: readingProgress.visual.viewTime + 1 });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [readingProgress.visual.viewTime, updateProgress]);
+
+  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 2));
+  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
+  const handleReset = () => {
+    setZoom(1);
+    setSelected(null);
+    updateProgress('visual', { currentDiagram: 0 });
+  };
+
+  /**
+   * When an organelle is selected, update the currentDiagram index in the
+   * context and store the selected organelle in local state.  Selecting
+   * the same organelle again deselects it.
+   */
+  const handleSelect = (org: Organelle) => {
+    if (selected && selected.id === org.id) {
+      setSelected(null);
+      updateProgress('visual', { currentDiagram: 0 });
+    } else {
+      setSelected(org);
+      // Use index + 1 to avoid 0 which represents no selection
+      const idx = organelles.findIndex(o => o.id === org.id) + 1;
+      updateProgress('visual', { currentDiagram: idx });
+    }
+  };
 
   return (
-    <Card className="p-6 bg-white">
-      <div className="space-y-6">
-        <div className="flex items-center space-x-3">
-          <Eye className="w-6 h-6 text-purple-600" />
-          <div>
-            <h3>Visual Diagram Mode</h3>
-            <p className="text-sm text-gray-600">Interactive diagrams and visual representations</p>
+    <div className="flex flex-col lg:flex-row gap-4">
+      {/* Diagram Area */}
+      <Card className="relative flex-1 p-4 overflow-hidden">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-semibold flex items-center space-x-2">
+            <Eye className="w-5 h-5" /> <span>Visual Diagram Mode</span>
+          </h2>
+          <div className="flex space-x-2">
+            <Button size="icon" variant="secondary" onClick={handleZoomOut}>
+              <ZoomOut className="w-4 h-4" />
+            </Button>
+            <Button size="icon" variant="secondary" onClick={handleZoomIn}>
+              <ZoomIn className="w-4 h-4" />
+            </Button>
+            <Button size="icon" variant="outline" onClick={handleReset}>
+              <RotateCcw className="w-4 h-4" />
+            </Button>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Interactive Diagram */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4>Organelle Function Comparison</h4>
-              <div className="flex space-x-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setZoom(Math.min(200, zoom + 25))}
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setZoom(Math.max(50, zoom - 25))}
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => { setZoom(100); setSelectedComponent(null); }}
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div 
-              className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 relative overflow-hidden"
-              style={{ height: '300px', transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }}
-            >
-              {/* Simplified Cell Diagram */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="relative w-64 h-48 bg-blue-50 rounded-full border-4 border-green-500">
-                  {/* Cell Membrane */}
-                  <div 
-                    className="absolute inset-0 rounded-full cursor-pointer hover:bg-green-100 transition-colors"
-                    onClick={() => setSelectedComponent('membrane')}
-                    title="Cell Membrane"
-                  />
-                  
-                  {/* Nucleus */}
-                  <div 
-                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-blue-500 rounded-full cursor-pointer hover:bg-blue-600 transition-colors"
-                    onClick={() => setSelectedComponent('nucleus')}
-                    title="Nucleus"
-                  />
-                  
-                  {/* Mitochondria */}
-                  <div 
-                    className="absolute top-6 right-6 w-8 h-12 bg-red-500 rounded-lg cursor-pointer hover:bg-red-600 transition-colors"
-                    onClick={() => setSelectedComponent('mitochondria')}
-                    title="Mitochondria"
-                  />
-                  
-                  {/* Another Mitochondria */}
-                  <div 
-                    className="absolute bottom-6 left-6 w-8 h-12 bg-red-500 rounded-lg cursor-pointer hover:bg-red-600 transition-colors"
-                    onClick={() => setSelectedComponent('mitochondria')}
-                    title="Mitochondria"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {cellComponents.map((component) => (
-                <Button
-                  key={component.id}
-                  variant={selectedComponent === component.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedComponent(component.id)}
-                  className="flex items-center space-x-2"
-                >
-                  <div className={`w-3 h-3 rounded-full ${component.color}`} />
-                  <span>{component.name}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          {/* Component Information */}
-          <div className="space-y-4">
-            <h4>Component Details</h4>
-            
-            {selectedComponent ? (
-              <div className="space-y-4">
-                {cellComponents
-                  .filter(comp => comp.id === selectedComponent)
-                  .map((component) => (
-                    <Card key={component.id} className="p-4 bg-gray-50">
-                      <div className="flex items-center space-x-3 mb-3">
-                        <div className={`w-4 h-4 rounded-full ${component.color}`} />
-                        <h5>{component.name}</h5>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-3">{component.description}</p>
-                      
-                      {component.id === 'nucleus' && (
-                        <div className="space-y-2">
-                          <Badge variant="outline">DNA Storage</Badge>
-                          <Badge variant="outline">Gene Expression</Badge>
-                          <Badge variant="outline">Cell Division Control</Badge>
-                        </div>
-                      )}
-                      
-                      {component.id === 'mitochondria' && (
-                        <div className="space-y-2">
-                          <Badge variant="outline">ATP Production</Badge>
-                          <Badge variant="outline">Cellular Respiration</Badge>
-                          <Badge variant="outline">Energy Metabolism</Badge>
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-              </div>
-            ) : (
-              <div className="bg-gray-50 p-6 rounded-lg text-center">
-                <p className="text-gray-600">Click on any component in the diagram to learn more about its function and structure.</p>
-              </div>
+        {/* Interactive canvas */}
+        <div
+          ref={diagramRef}
+          className="relative w-full h-64 sm:h-80 md:h-96 bg-gray-100 border border-gray-200 rounded-md overflow-hidden"
+          style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+        >
+          {organelles.map(org => (
+            <button
+              key={org.id}
+              onClick={() => handleSelect(org)}
+              style={{
+                position: 'absolute',
+                left: `${org.x}%`,
+                top: `${org.y}%`,
+                transform: 'translate(-50%, -50%)',
+              }}
+              className={`w-10 h-10 rounded-full opacity-80 hover:opacity-100 focus:outline-none ${
+                selected?.id === org.id ? 'ring-4 ring-blue-500' : ''
+              } ${org.color}`}
+              title={org.name}
+            />
+          ))}
+        </div>
+        <p className="text-sm text-gray-500 mt-2">Click an organelle to learn more.</p>
+        <p className="text-sm text-gray-500">Zoom: {Math.round(zoom * 100)}%</p>
+      </Card>
+      {/* Details Panel */}
+      <Card className="w-full lg:w-1/3 p-4 space-y-4">
+        {selected ? (
+          <>
+            <h3 className="text-lg font-semibold">{selected.name}</h3>
+            <p className="text-gray-700 whitespace-pre-wrap">{selected.description}</p>
+            {/* Example: provide additional contextual details for each organelle */}
+            {selected.id === 'nucleus' && (
+              <ul className="list-disc list-inside text-sm text-gray-700 mt-2 space-y-1">
+                <li>Stores DNA and controls gene expression.</li>
+                <li>Surrounded by a double membrane with nuclear pores.</li>
+                <li>Contains the nucleolus where ribosomes are assembled.</li>
+              </ul>
             )}
-
-            <div className="bg-purple-50 p-4 rounded-lg border-l-4 border-purple-400">
-              <p className="text-purple-800">
-                <strong>Visual Learning Tip:</strong> Use the interactive diagram to explore relationships 
-                between different cell components. Visual connections help with memory retention.
-              </p>
-            </div>
+            {selected.id === 'mitochondria' && (
+              <ul className="list-disc list-inside text-sm text-gray-700 mt-2 space-y-1">
+                <li>Site of oxidative phosphorylation and ATP production.</li>
+                <li>Has its own genome and replicates independently of the cell.</li>
+                <li>Thought to have arisen from endosymbiosis of bacteria.</li>
+              </ul>
+            )}
+            {selected.id === 'membrane' && (
+              <ul className="list-disc list-inside text-sm text-gray-700 mt-2 space-y-1">
+                <li>Composed of a phospholipid bilayer with embedded proteins.</li>
+                <li>Regulates transport and communication with the environment.</li>
+                <li>Fluid and dynamic, allowing lateral movement of components.</li>
+              </ul>
+            )}
+            {selected.id === 'cytoplasm' && (
+              <ul className="list-disc list-inside text-sm text-gray-700 mt-2 space-y-1">
+                <li>Contains cytosol, organelles and cytoskeletal elements.</li>
+                <li>Site of metabolic pathways such as glycolysis.</li>
+                <li>Supports cell shape and facilitates intracellular transport.</li>
+              </ul>
+            )}
+          </>
+        ) : (
+          <div className="text-gray-500 text-sm">
+            <p>Select an organelle from the diagram to view its details. Use the zoom controls to explore the diagram in more detail.</p>
+            <p className="mt-2">Time spent exploring contributes to your visual learning progress.</p>
           </div>
+        )}
+        {/* Progress indicator for visual mode */}
+        <div className="mt-4">
+          <p className="text-sm text-gray-500">
+            Viewed Diagrams: {readingProgress.visual.currentDiagram}/{organelles.length}
+          </p>
+          <p className="text-sm text-gray-500">
+            Time Spent: {Math.floor(readingProgress.visual.viewTime / 60)}m{' '}
+            {readingProgress.visual.viewTime % 60}s
+          </p>
         </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

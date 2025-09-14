@@ -1,72 +1,89 @@
 import React from 'react';
 import { Card } from './ui/card';
 import { Progress } from './ui/progress';
-import { Clock, BookOpen } from 'lucide-react';
+import { Button } from './ui/button';
+import { Clock, BookOpen, ArrowRight } from 'lucide-react';
 
-interface CourseProgress {
+/**
+ * LearningProgress
+ *
+ * Displays a summary of the learner's progress through the current course.
+ * It shows an overall completion percentage, a progress bar, the current
+ * chapter title with a short description and the total study time. An
+ * optional "Continue" button allows the user to quickly return to the
+ * primary reading mode or open the next piece of content. All units (e.g.
+ * minutes) should be pre‑computed by the parent component.
+ */
+export interface LearningProgressProps {
+  /** Name of the course or module being studied. */
   courseName: string;
+  /** Overall completion percentage from 0–100. */
   completion: number;
+  /** Current chapter or section title. */
   currentChapter: string;
+  /** Brief summary of the current chapter (one or two sentences). */
+  chapterSummary: string;
+  /** Total study time spent across all modes, in minutes. */
   studyTime: number;
+  /** Optional click handler for the "Continue" button. */
+  onContinue?: () => void;
 }
 
-interface LearningProgressProps {
-  courseProgress: CourseProgress;
-}
+export function LearningProgress({
+  courseName,
+  completion,
+  currentChapter,
+  chapterSummary,
+  studyTime,
+  onContinue,
+}: LearningProgressProps): JSX.Element {
+  // Clamp completion values to ensure progress bar behaves predictably.
+  const safeCompletion = Math.max(0, Math.min(100, completion));
 
-export function LearningProgress({ courseProgress }: LearningProgressProps) {
   return (
-    <Card className="p-6 bg-white">
-      <div className="space-y-6">
-        {/* Course Info */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2>Learning Progress</h2>
-            <p className="text-gray-600 mt-1">Keep up the great work! You're making steady progress.</p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl">{courseProgress.completion}%</div>
-            <p className="text-sm text-gray-600">Course Completion</p>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span>Progress</span>
-            <span>{courseProgress.completion}%</span>
-          </div>
-          <Progress value={courseProgress.completion} className="h-2" />
-        </div>
-
-        {/* Current Chapter */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <div className="flex items-center space-x-2">
-              <BookOpen className="w-5 h-5 text-blue-600" />
-              <span className="text-sm text-gray-600">Current Chapter</span>
-            </div>
-            <div>
-              <h3 className="text-[14px]">{courseProgress.currentChapter}</h3>
-              <p className="text-sm text-gray-600 mt-1">
-                The cell membrane is composed of a phospholipid bilayer with selective permeability, 
-                controlling the movement of substances in and out of the cell. Proteins in the membrane 
-                are involved in signal transduction, transport, and recognition.
-              </p>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <Clock className="w-4 h-4" />
-              <span>Study Time: {courseProgress.studyTime} minutes</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center">
-            <div className="w-32 h-32 bg-blue-50 rounded-lg border-2 border-dashed border-blue-200 flex items-center justify-center">
-              <span className="text-blue-600 text-sm">Continue Reading</span>
-            </div>
-          </div>
-        </div>
+    <Card className="p-6 space-y-6">
+      {/* Header */}
+      <div className="space-y-1">
+        <h3 className="text-lg font-semibold">Learning Progress</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Keep up the great work! Your progress in <strong>{courseName}</strong> is improving steadily.
+        </p>
       </div>
+
+      {/* Overall completion section */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium flex items-center space-x-2">
+            <BookOpen className="w-4 h-4" />
+            <span>Course Completion</span>
+          </span>
+          <span className="text-sm font-semibold">{safeCompletion}%</span>
+        </div>
+        <Progress value={safeCompletion} className="h-3" />
+      </div>
+
+      {/* Current chapter summary */}
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium">Current Chapter</h4>
+        <p className="text-md font-semibold text-primary-600 dark:text-primary-400">{currentChapter}</p>
+        <p className="text-sm text-gray-700 dark:text-gray-300 leading-snug">{chapterSummary}</p>
+      </div>
+
+      {/* Study time */}
+      <div className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300">
+        <Clock className="w-4 h-4" />
+        <span>Study Time: {Math.round(studyTime)} minutes</span>
+      </div>
+
+      {/* Continue button */}
+      {onContinue && (
+        <div className="flex justify-end">
+          <Button onClick={onContinue} variant="default">
+            Continue
+            <ArrowRight className="ml-2 w-4 h-4" />
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

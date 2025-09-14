@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Card } from './components/ui/card';
 import { Button } from './components/ui/button';
-import { Progress } from './components/ui/progress';
-import { Badge } from './components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Switch } from './components/ui/switch';
+import { Tabs, TabsContent } from './components/ui/tabs';
+import { TooltipProvider } from './components/ui/tooltip';
+import { LearningProvider, useLearning } from './components/LearningContext';
 import { LearningProgress } from './components/LearningProgress';
 import { StandardTextMode } from './components/StandardTextMode';
 import { TextToSpeechMode } from './components/TextToSpeechMode';
@@ -13,159 +13,197 @@ import { InteractiveQuizMode } from './components/InteractiveQuizMode';
 import { PersistentTimer } from './components/PersistentTimer';
 import { QuickModeSwitch } from './components/QuickModeSwitch';
 import { ModeTabsWithTooltips } from './components/ModeTabsWithTooltips';
-import { LearningProvider } from './components/LearningContext';
-import { TooltipProvider } from './components/ui/tooltip';
-import { Brain, BookOpen, Volume2, Eye, HelpCircle, Minimize2 } from 'lucide-react';
+import { BookOpen, Volume2, Eye, HelpCircle } from 'lucide-react';
 
-interface CourseProgress {
-  courseName: string;
-  completion: number;
-  currentChapter: string;
-  studyTime: number;
-}
-
-export default function App() {
-  const [courseProgress] = useState<CourseProgress>({
-    courseName: "Cell Membrane: Structure and Function",
-    completion: 25,
-    currentChapter: "Cell Structure and Function",
-    studyTime: 32 // minutes
-  });
-
-  const [activeMode, setActiveMode] = useState('standard');
+/**
+ * Application root component.  This component encapsulates the entire
+ * ADHD‑friendly learning platform and coordinates the global layout.  It
+ * includes a header with a minimal mode toggle, a persistent Pomodoro
+ * timer, a summary of learning progress, and the main content area where
+ * different learning modes (text, audio, visual, quiz) are rendered.  A
+ * minimal mode hides most interface chrome, leaving only the active
+ * learning mode and a compact mode switcher for distraction‑free study.
+ */
+export default function App(): JSX.Element {
+  // Top‑level state controlling which learning mode is active.  Valid
+  // values correspond to the identifiers used in StandardTextMode,
+  // TextToSpeechMode, VisualDiagramMode and InteractiveQuizMode.
+  const [activeMode, setActiveMode] = useState<'standard' | 'speech' | 'visual' | 'quiz'>('standard');
+  // Whether the app is in minimal mode.  When true the UI is simplified.
   const [isMinimalMode, setIsMinimalMode] = useState(false);
 
   return (
-    <TooltipProvider>
-      <LearningProvider>
-        <div className="min-h-screen bg-gray-50">
-          {/* Persistent Timer */}
-          <PersistentTimer isMinimalMode={isMinimalMode} />
+    <LearningProvider>
+      <TooltipProvider>
+        <MainLayout
+          activeMode={activeMode}
+          onModeChange={setActiveMode}
+          isMinimalMode={isMinimalMode}
+          onMinimalModeToggle={setIsMinimalMode}
+        />
+      </TooltipProvider>
+    </LearningProvider>
+  );
+}
 
-      {/* Header */}
+interface MainLayoutProps {
+  activeMode: 'standard' | 'speech' | 'visual' | 'quiz';
+  onModeChange: (mode: 'standard' | 'speech' | 'visual' | 'quiz') => void;
+  isMinimalMode: boolean;
+  onMinimalModeToggle: (state: boolean) => void;
+}
+
+/**
+ * MainLayout
+ *
+ * Separates the logic that must consume the LearningContext from the outer
+ * App component.  This component computes derived progress values and
+ * assembles the layout accordingly.  It is separated into a header,
+ * optional progress summary, mode selection controls and the content area.
+ */
+function MainLayout({ activeMode, onModeChange, isMinimalMode, onMinimalModeToggle }: MainLayoutProps): JSX.Element {
+  // Access reading progress and helper functions from the context.
+  const { readingProgress, getOverallCompletion } = useLearning();
+
+  // Compute aggregated study time across all modes in minutes.  The
+  // conversion to minutes rounds down to avoid inflating the time.
+  const totalSeconds =
+    readingProgress.standardText.readingTime +
+    readingProgress.audioText.playbackTime +
+    readingProgress.visual.viewTime;
+  const studyTimeMinutes = totalSeconds / 60;
+
+  // Determine the current chapter title and summary for the progress card.
+  // Since the StandardTextMode exports its content internally only, we
+  // provide a generic description here.  In a real system this could be
+  // fetched from a course data API or imported from a content file.
+  const currentChapterIndex = readingProgress.standardText.currentSection;
+  const chapterTitles = [
+    'Cell Membrane: Structure and Function',
+    'Membrane Transport Mechanisms',
+    'Membrane Proteins and Their Functions',
+    'Fluid Mosaic Model',
+    'Cell Membrane Disorders',
+  ];
+  const chapterSummaries = [
+    'An overview of the phospholipid bilayer and its roles in selective permeability.',
+    'Different modes of transport across the membrane: passive, active and vesicular.',
+    'The various types of membrane proteins and how they facilitate cellular processes.',
+    'Explaining the dynamic nature of the membrane and the fluid mosaic model.',
+    'Common disorders arising from membrane dysfunction and their physiological impacts.',
+  ];
+  const currentChapter = chapterTitles[Math.min(currentChapterIndex, chapterTitles.length - 1)];
+  const currentSummary = chapterSummaries[Math.min(currentChapterIndex, chapterSummaries.length - 1)];
+
+  const overallCompletion = getOverallCompletion();
+
+  return (
+    <div className="min-h-screen flex flex-col gap-4 p-4 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      {/* Persistent timer at the top of the page */}
+      <div className="w-full max-w-md mx-auto">
+        <PersistentTimer isMinimalMode={isMinimalMode} />
+      </div>
+
+      {/* Header section */}
+      <header className="w-full max-w-5xl mx-auto flex flex-col gap-2">
+        {!isMinimalMode ? (
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+            <h1 className="text-2xl font-bold flex items-center space-x-2">
+              <span>ADHD‑Friendly Learning Platform</span>
+            </h1>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm">Minimal Mode</span>
+              <Switch
+                checked={isMinimalMode}
+                onCheckedChange={onMinimalModeToggle}
+                aria-label="Toggle minimal mode"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold">Learning</h1>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm">Minimal Mode</span>
+              <Switch
+                checked={isMinimalMode}
+                onCheckedChange={onMinimalModeToggle}
+                aria-label="Toggle minimal mode"
+              />
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Progress summary for non‑minimal view */}
       {!isMinimalMode && (
-        <header className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Brain className="w-8 h-8 text-blue-600" />
-                <h1 className="text-xl">ADHD-Friendly Learning Platform</h1>
-              </div>
-              <div className="flex items-center space-x-4">
-                {/* Minimal Mode Toggle */}
-                <div className="flex items-center space-x-2">
-                  <Minimize2 className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">Minimal Mode</span>
-                  <Switch 
-                    checked={isMinimalMode} 
-                    onCheckedChange={setIsMinimalMode}
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">⚙️ In Progress</span>
-                  <Badge variant="secondary" className="bg-green-100 text-green-800">
-                    Online
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
-      )}
-
-      {/* Minimal Mode Header */}
-      {isMinimalMode && (
-        <div className="bg-white border-b border-gray-100 py-2">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Brain className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Learning</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-500">Minimal Mode</span>
-                <Switch 
-                  checked={isMinimalMode} 
-                  onCheckedChange={setIsMinimalMode}
-                  className="scale-75"
-                />
-              </div>
-            </div>
-          </div>
+        <div className="w-full max-w-5xl mx-auto">
+          <LearningProgress
+            courseName="Cell Membrane: Structure and Function"
+            completion={overallCompletion}
+            currentChapter={currentChapter}
+            chapterSummary={currentSummary}
+            studyTime={studyTimeMinutes}
+            onContinue={() => onModeChange('standard')}
+          />
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Learning Progress Section - Hidden in minimal mode */}
-        {!isMinimalMode && <LearningProgress courseProgress={courseProgress} />}
-
-        {/* Learning Modes */}
-        <div className={isMinimalMode ? "mt-4" : "mt-8"}>
-          <Tabs value={activeMode} onValueChange={setActiveMode} className="space-y-6">
-            {/* Mode Tabs with Tooltips - Hidden in minimal mode */}
-            {!isMinimalMode && <ModeTabsWithTooltips />}
-
-            {/* Minimal Mode Current Tab Indicator */}
-            {isMinimalMode && (
-              <div className="flex items-center justify-center py-2">
-                <div className="flex items-center space-x-2 text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                  {activeMode === 'standard' && <><BookOpen className="w-4 h-4" /><span>Reading Mode</span></>}
-                  {activeMode === 'speech' && <><Volume2 className="w-4 h-4" /><span>Audio Mode</span></>}
-                  {activeMode === 'visual' && <><Eye className="w-4 h-4" /><span>Visual Mode</span></>}
-                  {activeMode === 'quiz' && <><HelpCircle className="w-4 h-4" /><span>Quiz Mode</span></>}
-                </div>
-              </div>
-            )}
-
-            <TabsContent value="standard">
+      {/* Main content area */}
+      <main className="flex-1 w-full max-w-5xl mx-auto">
+        {!isMinimalMode ? (
+          <Tabs
+            value={activeMode}
+            onValueChange={value => onModeChange(value as 'standard' | 'speech' | 'visual' | 'quiz')}
+            className="space-y-4"
+          >
+            <ModeTabsWithTooltips activeMode={activeMode} onModeChange={onModeChange} />
+            <TabsContent value="standard" className="pt-4">
               <StandardTextMode />
             </TabsContent>
-
-            <TabsContent value="speech">
+            <TabsContent value="speech" className="pt-4">
               <TextToSpeechMode />
             </TabsContent>
-
-            <TabsContent value="visual">
+            <TabsContent value="visual" className="pt-4">
               <VisualDiagramMode />
             </TabsContent>
-
-            <TabsContent value="quiz">
+            <TabsContent value="quiz" className="pt-4">
               <InteractiveQuizMode />
             </TabsContent>
           </Tabs>
-        </div>
-
-        {/* Bottom Navigation - Simplified in minimal mode */}
-        <div className="mt-8 flex justify-between items-center">
-          {!isMinimalMode ? (
-            <div className="flex items-center space-x-4">
-              <Badge variant="outline" className="flex items-center space-x-1">
-                <Brain className="w-3 h-3" />
-                <span>ADHD Focus Mode</span>
-              </Badge>
-              <span className="text-sm text-gray-600">1/20</span>
-              <span className="text-sm text-gray-600">Progress Tracking ●●●○○</span>
+        ) : (
+          // Minimal mode: render only the active mode component and a quick switch at the bottom
+          <div className="space-y-4">
+            <div className="pt-2">
+              {activeMode === 'standard' && <StandardTextMode />}
+              {activeMode === 'speech' && <TextToSpeechMode />}
+              {activeMode === 'visual' && <VisualDiagramMode />}
+              {activeMode === 'quiz' && <InteractiveQuizMode />}
             </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">1/20</span>
+            <div className="w-full flex justify-center pt-4">
+              <QuickModeSwitch activeMode={activeMode} onModeChange={onModeChange} />
             </div>
-          )}
-          <Button className="bg-purple-600 hover:bg-purple-700">
-            Next Question
-          </Button>
-        </div>
-
-        {/* Quick Mode Switch for Minimal Mode */}
-        {isMinimalMode && (
-          <QuickModeSwitch 
-            activeMode={activeMode} 
-            onModeChange={setActiveMode} 
-          />
+          </div>
         )}
-        </div>
-        </div>
-      </LearningProvider>
-    </TooltipProvider>
+      </main>
+
+      {/* Bottom navigation and progress indicator */}
+      <footer className="w-full max-w-5xl mx-auto py-4 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+        {/* Show current progress in the quiz if active, otherwise display overall progress */}
+        {activeMode === 'quiz' ? (
+          <span>
+            Question {readingProgress.quiz.currentQuestion + 1} / {readingProgress.quiz.totalQuestions}
+          </span>
+        ) : (
+          <span>Overall Completion: {overallCompletion}%</span>
+        )}
+        {/* Show a generic next action; in a real app this could trigger a callback */}
+        {activeMode === 'quiz' ? (
+          <span className="font-medium text-primary-600 dark:text-primary-400">Answer the next question</span>
+        ) : (
+          <span className="font-medium text-primary-600 dark:text-primary-400">Continue your learning journey</span>
+        )}
+      </footer>
+    </div>
   );
 }
