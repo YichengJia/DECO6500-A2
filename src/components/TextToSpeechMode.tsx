@@ -4,12 +4,14 @@ import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Slider } from './ui/slider';
 import { Volume2, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
+import { useLearning } from './LearningContext';
 
 export function TextToSpeechMode() {
+  const { readingProgress, updateProgress } = useLearning();
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState([1.0]);
   const [progress, setProgress] = useState(0);
-  const [currentSentence, setCurrentSentence] = useState(0);
+  const [currentSentence, setCurrentSentence] = useState(readingProgress.audioText.currentSentence);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isSupported, setIsSupported] = useState(true);
@@ -27,6 +29,15 @@ export function TextToSpeechMode() {
     "Mitochondria have their own DNA and can reproduce independently of the cell.",
     "This suggests that mitochondria were once free-living bacteria that formed a symbiotic relationship with early eukaryotic cells."
   ];
+
+  // Update context when progress changes
+  useEffect(() => {
+    updateProgress('audioText', {
+      currentSentence,
+      totalSentences: textContent.length,
+      playbackTime: currentTime
+    });
+  }, [currentSentence, currentTime, updateProgress]);
 
   // Check for Speech Synthesis support
   useEffect(() => {
@@ -320,7 +331,8 @@ export function TextToSpeechMode() {
 
         <div className="flex items-center justify-between">
           <div className="text-sm text-gray-600">
-            Currently reading: Sentence {currentSentence + 1} of {textContent.length}
+            Progress: Sentence {currentSentence + 1} of {textContent.length} 
+            ({Math.round(((currentSentence + 1) / textContent.length) * 100)}% complete)
           </div>
           <div className="flex space-x-2">
             <Button 
@@ -330,7 +342,10 @@ export function TextToSpeechMode() {
             >
               Stop
             </Button>
-            <Button variant="outline" onClick={() => setCurrentSentence(0)}>
+            <Button variant="outline" onClick={() => {
+              setCurrentSentence(0);
+              updateProgress('audioText', { currentSentence: 0, playbackTime: 0 });
+            }}>
               Reset
             </Button>
           </div>
