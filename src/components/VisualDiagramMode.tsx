@@ -65,10 +65,28 @@ const organelles: Organelle[] = [
 ];
 
 export function VisualDiagramMode(): JSX.Element {
-  const { readingProgress, updateProgress } = useLearning();
+  const { readingProgress, updateProgress, addPoints, earnAchievement, achievementsEarned } = useLearning();
   const [selected, setSelected] = useState<Organelle | null>(null);
   const [zoom, setZoom] = useState(1); // 1 = 100%
   const diagramRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Track which organelles have been visited.  This set is initialised
+   * from localStorage so visits persist across sessions.  When a new
+   * organelle is selected for the first time the learner earns points.
+   */
+  const [visited, setVisited] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = window.localStorage.getItem('visualVisited');
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    } catch {
+      /* ignore */
+    }
+    return new Set();
+  });
 
   // Track time spent on the visual mode
   useEffect(() => {
@@ -77,6 +95,17 @@ export function VisualDiagramMode(): JSX.Element {
     }, 1000);
     return () => clearInterval(interval);
   }, [readingProgress.visual.viewTime, updateProgress]);
+
+  // Persist the visited organelles to localStorage whenever the set changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('visualVisited', JSON.stringify(Array.from(visited)));
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [visited]);
 
   const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 2));
   const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
@@ -93,10 +122,24 @@ export function VisualDiagramMode(): JSX.Element {
    */
   const handleSelect = (org: Organelle) => {
     if (selected && selected.id === org.id) {
+      // Deselecting organelle
       setSelected(null);
       updateProgress('visual', { currentDiagram: 0 });
     } else {
+      // Selecting a new organelle
       setSelected(org);
+      // Award points on first visit
+      if (!visited.has(org.id)) {
+        const newVisited = new Set(visited);
+        newVisited.add(org.id);
+        setVisited(newVisited);
+        // Grant small reward for discovery
+        addPoints(5);
+        // If this visit completes all organelles, unlock achievement
+        if (newVisited.size === organelles.length && !achievementsEarned.includes('explore-all-diagrams')) {
+          earnAchievement('explore-all-diagrams');
+        }
+      }
       // Use index + 1 to avoid 0 which represents no selection
       const idx = organelles.findIndex(o => o.id === org.id) + 1;
       updateProgress('visual', { currentDiagram: idx });
@@ -106,7 +149,7 @@ export function VisualDiagramMode(): JSX.Element {
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       {/* Diagram Area */}
-      <Card className="relative flex-1 p-4 overflow-hidden">
+      <Card className="relative flex-1 p-4 overflow-hidden bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold flex items-center space-x-2">
             <Eye className="w-5 h-5" /> <span>Visual Diagram Mode</span>
@@ -150,7 +193,7 @@ export function VisualDiagramMode(): JSX.Element {
         <p className="text-sm text-gray-500">Zoom: {Math.round(zoom * 100)}%</p>
       </Card>
       {/* Details Panel */}
-      <Card className="w-full lg:w-1/3 p-4 space-y-4">
+      <Card className="w-full lg:w-1/3 p-4 space-y-4 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         {selected ? (
           <>
             <h3 className="text-lg font-semibold">{selected.name}</h3>

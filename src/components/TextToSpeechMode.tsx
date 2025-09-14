@@ -17,7 +17,7 @@ import { useLearning } from './LearningContext';
  */
 
 export function TextToSpeechMode(): JSX.Element {
-  const { readingProgress, updateProgress } = useLearning();
+  const { readingProgress, updateProgress, addPoints, earnAchievement, achievementsEarned } = useLearning();
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
   const [duration, setDuration] = useState(0);
@@ -122,6 +122,12 @@ export function TextToSpeechMode(): JSX.Element {
       stopTimer();
       setCurrentSentence(0);
       setCurrentTime(0);
+      // Award points for completing the entire audio passage
+      addPoints(10);
+      // Unlock audio completion achievement if not already
+      if (!achievementsEarned.includes('audio-finished')) {
+        earnAchievement('audio-finished');
+      }
     };
     utter.onerror = () => {
       setIsPlaying(false);
@@ -230,7 +236,7 @@ export function TextToSpeechMode(): JSX.Element {
 
   if (!supported) {
     return (
-      <Card className="p-6">
+      <Card className="p-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         <h2 className="text-xl font-semibold mb-2 flex items-center space-x-2">
           <Volume2 className="w-5 h-5" /> <span>Text‑to‑Speech Mode</span>
         </h2>
@@ -241,7 +247,7 @@ export function TextToSpeechMode(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
+      <Card className="p-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold flex items-center space-x-2">

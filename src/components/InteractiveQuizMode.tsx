@@ -32,7 +32,7 @@ interface QuizQuestion {
  * learner can review their score or reset the quiz.
  */
 export function InteractiveQuizMode(): JSX.Element {
-  const { readingProgress, updateProgress } = useLearning();
+  const { readingProgress, updateProgress, addPoints, earnAchievement, achievementsEarned } = useLearning();
   // Initialise quiz state from context so that leaving and returning to the quiz
   // preserves progress
   const [currentQuestion, setCurrentQuestion] = useState(readingProgress.quiz.currentQuestion);
@@ -136,6 +136,8 @@ export function InteractiveQuizMode(): JSX.Element {
     setShowResult(true);
     if (selectedAnswer === current.correct) {
       setScore(s => s + 1);
+      // Award points for correct answer
+      addPoints(10);
     }
     setCompletedQuestions(prev => [...prev, currentQuestion]);
   };
@@ -167,6 +169,17 @@ export function InteractiveQuizMode(): JSX.Element {
     setTimeSpent(0);
   };
 
+  // Watch for perfect quiz completion to unlock the quiz champion achievement.
+  useEffect(() => {
+    if (
+      completedQuestions.length === totalQuestions &&
+      score === totalQuestions &&
+      !achievementsEarned.includes('quiz-perfection')
+    ) {
+      earnAchievement('quiz-perfection');
+    }
+  }, [completedQuestions.length, score, totalQuestions, achievementsEarned, earnAchievement]);
+
   /**
    * Calculate an estimate of the remaining time based on the average time per
    * question and the number of unanswered questions.
@@ -179,7 +192,7 @@ export function InteractiveQuizMode(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <Card className="p-6">
+      <Card className="p-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold flex items-center space-x-2">

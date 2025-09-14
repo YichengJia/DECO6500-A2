@@ -39,6 +39,22 @@ export interface ReadingProgress {
     score: number;
     completedQuestions: number[];
   };
+
+  /**
+   * Aggregate points earned across all learning activities.  Points can be
+   * awarded for reading comprehension quizzes, interactive diagram tasks or
+   * completing focus sessions.  This value persists across sessions.
+   */
+  points: number;
+
+  /**
+   * Identifiers of achievements that the learner has earned.  Each time
+   * the learner accomplishes a milestone (e.g. completes a section, answers a
+   * recall question correctly, finishes a focus session), a unique
+   * achievement identifier can be added to this array.  This list is
+   * persisted across sessions via localStorage to track long‑term progress.
+   */
+  achievementsEarned: string[];
 }
 
 /**
@@ -52,6 +68,31 @@ export interface LearningContextType {
   getCurrentProgress: () => number;
   getOverallCompletion: () => number;
   resetProgress: () => void;
+
+  /**
+   * Current point total for the learner.  Points accumulate as the user
+   * completes reading sections, answers quiz questions correctly or
+   * interacts successfully with diagrams.  Use `addPoints` to modify.
+   */
+  points: number;
+  /** Add a positive or negative number of points to the learner's total. */
+  addPoints: (amount: number) => void;
+
+  /**
+   * A list of achievement identifiers the learner has earned.  Use
+   * `earnAchievement` to add new achievements.  The list is stored in
+   * localStorage and can be used to display badges or unlock content.
+   */
+  achievementsEarned: string[];
+
+  /**
+   * Mark a specific achievement as earned.  If the achievement has already
+   * been unlocked, the call is ignored.  Achievements are represented
+   * by unique string identifiers defined in your application.  When a
+   * new achievement is earned the change is persisted and can trigger UI
+   * feedback such as a toast or confetti animation.
+   */
+  earnAchievement: (id: string) => void;
 }
 
 // Default progress values.  These numbers should align with the actual
@@ -79,6 +120,16 @@ const initialProgress: ReadingProgress = {
     score: 0,
     completedQuestions: [],
   },
+
+  // Initial point total.  Learners accrue points by completing tasks and
+  // quizzes throughout the platform.  The value is persisted in
+  // localStorage via LearningProvider.
+  points: 0,
+
+  // Initially the learner has earned no achievements.  As they interact
+  // with the platform this array will be populated with identifiers of
+  // unlocked achievements (e.g. 'first-section', 'all-sections-read').
+  achievementsEarned: [],
 };
 
 // Key used to persist progress in localStorage.
@@ -192,6 +243,34 @@ export function LearningProvider({ children }: { children: ReactNode }): JSX.Ele
     getCurrentProgress,
     getOverallCompletion,
     resetProgress,
+
+    // Expose the current point total separately for convenience
+    points: readingProgress.points,
+    // Award or remove points.  Negative values are allowed to penalise
+    // incorrect actions.  Points are clamped at zero to avoid negative totals.
+    addPoints: (amount: number) => {
+      setReadingProgress(prev => {
+        const newTotal = Math.max(0, prev.points + amount);
+        return { ...prev, points: newTotal } as ReadingProgress;
+      });
+    },
+
+    // Provide the list of earned achievements.  Consumers can display
+    // available badges by comparing this list against the full catalogue of
+    // achievements defined elsewhere in the application.
+    achievementsEarned: readingProgress.achievementsEarned,
+    // Mark an achievement as earned if it hasn't been recorded yet.
+    earnAchievement: (id: string) => {
+      setReadingProgress(prev => {
+        if (prev.achievementsEarned.includes(id)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          achievementsEarned: [...prev.achievementsEarned, id],
+        } as ReadingProgress;
+      });
+    },
   };
 
   return <LearningContext.Provider value={value}>{children}</LearningContext.Provider>;

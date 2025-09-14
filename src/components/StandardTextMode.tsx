@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import { ChevronLeft, ChevronRight, RotateCcw, BookOpen } from 'lucide-react';
+import { Switch } from './ui/switch';
+import { ChevronLeft, ChevronRight, RotateCcw, BookOpen, Star as StarIcon } from 'lucide-react';
 import { useLearning } from './LearningContext';
 
 /**
@@ -32,6 +33,12 @@ const contentSections = [
     additionalInfo:
       'Proteins in the membrane are involved in signal transduction, transport and recognition. These proteins can be integral (spanning the entire membrane) or peripheral (attached to one side of the membrane).',
     tip: 'Break down complex concepts into smaller chunks. Focus on one component at a time before moving to the next.',
+    recall: {
+      question: 'Which component forms the basic structure of the cell membrane?',
+      options: ['Phospholipids', 'Proteins', 'Cholesterol', 'Carbohydrates'],
+      correctIndex: 0,
+      explanation: 'Phospholipids have hydrophilic heads and hydrophobic tails that form the bilayer.',
+    },
   },
   {
     title: 'Membrane Transport Mechanisms',
@@ -46,6 +53,12 @@ const contentSections = [
     additionalInfo:
       'The sodium‑potassium pump is a classic example of active transport, maintaining the electrochemical gradient essential for nerve impulse transmission.',
     tip: 'Visualise transport mechanisms as doors and tunnels – some open freely (passive), others need keys (active).',
+    recall: {
+      question: 'Which transport mechanism requires energy to move substances against their concentration gradients?',
+      options: ['Passive Transport', 'Active Transport', 'Endocytosis', 'Exocytosis'],
+      correctIndex: 1,
+      explanation: 'Active transport uses ATP to move substances against their concentration gradients.',
+    },
   },
   {
     title: 'Membrane Proteins and Their Functions',
@@ -60,6 +73,12 @@ const contentSections = [
     additionalInfo:
       'Glycoproteins – proteins with attached carbohydrates – play crucial roles in cell recognition and immune system function.',
     tip: 'Think of membrane proteins as specialised workers, each with a specific job to keep the cell functioning properly.',
+    recall: {
+      question: 'Which membrane protein changes shape to move substances across the membrane?',
+      options: ['Channel proteins', 'Carrier proteins', 'Receptor proteins', 'Enzyme proteins'],
+      correctIndex: 1,
+      explanation: 'Carrier proteins change shape to shuttle molecules across the membrane.',
+    },
   },
   {
     title: 'Fluid Mosaic Model',
@@ -74,6 +93,12 @@ const contentSections = [
     additionalInfo:
       'Temperature changes affect membrane fluidity – too cold and it becomes rigid, too hot and it becomes too permeable.',
     tip: 'Imagine the membrane as a fluid sea with protein icebergs floating and moving within it.',
+    recall: {
+      question: 'What term describes the ability of membrane components to move laterally within the lipid bilayer?',
+      options: ['Asymmetry', 'Membrane fluidity', 'Protein distribution', 'Lipid bilayer'],
+      correctIndex: 1,
+      explanation: 'Membrane fluidity refers to lateral movement of lipids and proteins within the bilayer.',
+    },
   },
   {
     title: 'Cell Membrane Disorders',
@@ -88,11 +113,17 @@ const contentSections = [
     additionalInfo:
       'Many medications work by targeting specific membrane proteins or altering membrane composition.',
     tip: 'Connect membrane disorders to their symptoms – this helps understand normal membrane functions.',
+    recall: {
+      question: 'Which disorder results from a defective chloride channel leading to thick secretions?',
+      options: ['Cystic Fibrosis', 'Sickle Cell Disease', 'Cholesterol Disorders', 'Ion Channel Disorders'],
+      correctIndex: 0,
+      explanation: 'Cystic fibrosis is caused by mutations in a chloride channel protein, producing thick mucus.',
+    },
   },
 ];
 
 export function StandardTextMode(): JSX.Element {
-  const { readingProgress, updateProgress } = useLearning();
+  const { readingProgress, updateProgress, addPoints, earnAchievement, achievementsEarned } = useLearning();
   const [showReviewMode, setShowReviewMode] = useState(false);
   const [reviewIndex, setReviewIndex] = useState(0);
   const [notes, setNotes] = useState<string>(() => {
@@ -102,6 +133,41 @@ export function StandardTextMode(): JSX.Element {
     }
     return '';
   });
+
+  /**
+   * Whether focus mode is active.  When enabled the interface hides
+   * supplemental information such as key points, additional information,
+   * study tips and personal notes.  This helps minimise distractions for
+   * learners with attention difficulties.  Focus mode state is not
+   * persisted across sessions to keep control simple.
+   */
+  const [isFocusMode, setIsFocusMode] = useState(false);
+
+  /**
+   * Map of answered recall questions by section index.  Each entry stores
+   * the index of the selected option.  Values are persisted in
+   * localStorage so learners do not lose their progress on page reload.  If
+   * a section has not been answered yet it will be undefined.
+   */
+  const [answeredRecall, setAnsweredRecall] = useState<Record<number, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    const result: Record<number, number> = {};
+    contentSections.forEach((_, idx) => {
+      const stored = window.localStorage.getItem(`standardRecallAnswer:${idx}`);
+      if (stored !== null) {
+        result[idx] = parseInt(stored, 10);
+      }
+    });
+    return result;
+  });
+
+  /**
+   * Feedback message after answering a recall question.  Contains text and
+   * a flag indicating correctness.  When defined the component displays
+   * this message below the question for positive reinforcement.  It is
+   * cleared when the user navigates to a new section or toggles focus mode.
+   */
+  const [feedback, setFeedback] = useState<{ correct: boolean; message: string } | null>(null);
 
   // Update reading time every second while not in review mode
   useEffect(() => {
@@ -113,6 +179,13 @@ export function StandardTextMode(): JSX.Element {
     }
     return () => clearInterval(timer);
   }, [showReviewMode, updateProgress, readingProgress.standardText.readingTime]);
+
+  // Clear feedback whenever the learner navigates sections, enters/exits
+  // review mode or toggles focus.  This prevents stale messages from
+  // persisting across interactions.
+  useEffect(() => {
+    setFeedback(null);
+  }, [currentSectionIndex, showReviewMode, isFocusMode]);
 
   const currentSectionIndex = readingProgress.standardText.currentSection;
   const isCompleted = currentSectionIndex >= contentSections.length;
@@ -136,6 +209,17 @@ export function StandardTextMode(): JSX.Element {
         }
         return '';
       });
+
+      // Award points for completing the section and unlock section‑based achievements
+      addPoints(5);
+      // If this was the first section being completed, unlock the first‑section achievement
+      if (currentSectionIndex === 0 && !achievementsEarned.includes('first-section')) {
+        earnAchievement('first-section');
+      }
+      // If this advancement means all sections have been read, unlock the all‑sections achievement
+      if (next >= contentSections.length && !achievementsEarned.includes('all-sections-read')) {
+        earnAchievement('all-sections-read');
+      }
     }
   };
 
@@ -186,73 +270,179 @@ export function StandardTextMode(): JSX.Element {
     }
   };
 
+  /**
+   * Handle a learner selecting an option for the recall question.  If the
+   * question has already been answered this function has no effect.  The
+   * selected option index is saved to state and localStorage.  Points
+   * are awarded based on correctness, achievements may be unlocked and
+   * feedback is displayed to encourage continued engagement.
+   */
+  const handleRecallSelect = (optionIndex: number) => {
+    // Only process if we are not in review mode and there is a recall question.
+    if (showReviewMode) return;
+    // Skip if already answered
+    if (answeredRecall[currentSectionIndex] !== undefined) return;
+    const recall = contentSections[currentSectionIndex].recall;
+    if (!recall) return;
+
+    setAnsweredRecall(prev => {
+      const updated = { ...prev, [currentSectionIndex]: optionIndex };
+      // Persist selection to localStorage
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(`standardRecallAnswer:${currentSectionIndex}`, String(optionIndex));
+      }
+      return updated;
+    });
+    const isCorrect = optionIndex === recall.correctIndex;
+    if (isCorrect) {
+      // Award more points for correct answers
+      addPoints(10);
+      // Unlock the first recall correct achievement if not yet earned
+      if (!achievementsEarned.includes('first-recall-correct')) {
+        earnAchievement('first-recall-correct');
+      }
+      // Check if all recall questions have been answered correctly
+      const allCorrect = contentSections.every((sec, idx) => {
+        const answer = idx === currentSectionIndex ? optionIndex : answeredRecall[idx];
+        return answer !== undefined && answer === sec.recall.correctIndex;
+      });
+      if (allCorrect && !achievementsEarned.includes('all-recall-correct')) {
+        earnAchievement('all-recall-correct');
+      }
+      setFeedback({ correct: true, message: `Correct! +10 points` });
+    } else {
+      // Small reward for attempting
+      addPoints(2);
+      setFeedback({ correct: false, message: `Incorrect. Correct answer: ${recall.options[recall.correctIndex]}. +2 points for trying!` });
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <Card className="p-6">
+      <Card className="p-6 bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg border border-gray-200 dark:border-gray-700 shadow-lg">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold flex items-center space-x-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+          <div className="flex items-center space-x-2">
             <BookOpen className="w-5 h-5" />
-            <span>{showReviewMode ? `Reviewing: ${section.title}` : section.title}</span>
-          </h2>
-          {!showReviewMode && (
-            <span className="text-sm text-gray-500">
-              Section {currentSectionIndex + 1} of {contentSections.length}
+            <span className="text-xl font-semibold">
+              {showReviewMode ? `Reviewing: ${section.title}` : section.title}
             </span>
-          )}
+          </div>
+          <div className="flex items-center space-x-4 justify-between sm:justify-end">
+            {!showReviewMode && (
+              <span className="text-sm text-gray-500">
+                Section {currentSectionIndex + 1} of {contentSections.length}
+              </span>
+            )}
+            {/* Focus mode toggle */}
+            <div className="flex items-center space-x-1">
+              <span className="text-sm">Focus Mode</span>
+              <Switch checked={isFocusMode} onCheckedChange={setIsFocusMode} aria-label="Toggle focus mode" />
+            </div>
+          </div>
         </div>
 
         {/* Main Content */}
         <p className="mb-4 leading-relaxed text-gray-700 whitespace-pre-wrap">{section.content}</p>
 
         {/* Key Points */}
-        <div className="mb-4">
-          <h3 className="font-semibold mb-2">Key Points</h3>
-          <ul className="list-disc list-inside space-y-1">
-            {section.keyPoints.map((kp, idx) => (
-              <li key={idx} className="ml-4">
-                <strong>{kp.title}:</strong> {kp.description}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {!isFocusMode && (
+          <div className="mb-4">
+            <h3 className="font-semibold mb-2">Key Points</h3>
+            <ul className="list-disc list-inside space-y-1">
+              {section.keyPoints.map((kp, idx) => (
+                <li key={idx} className="ml-4">
+                  <strong>{kp.title}:</strong> {kp.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Additional Info */}
-        {section.additionalInfo && (
-          <details className="mb-4 bg-gray-50 p-3 rounded-md border border-gray-200">
+        {!isFocusMode && section.additionalInfo && (
+          <details className="mb-4 bg-gray-50 p-3 rounded-md border border-gray-200 dark:bg-gray-700 dark:border-gray-600">
             <summary className="cursor-pointer font-semibold">Additional Information</summary>
-            <p className="mt-2 text-gray-700 whitespace-pre-wrap">{section.additionalInfo}</p>
+            <p className="mt-2 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{section.additionalInfo}</p>
           </details>
         )}
 
         {/* Study Tip */}
-        {section.tip && (
-          <blockquote className="mb-4 p-3 italic border-l-4 border-blue-500 bg-blue-50 text-blue-900 rounded-r">
+        {!isFocusMode && section.tip && (
+          <blockquote className="mb-4 p-3 italic border-l-4 border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-900 dark:text-blue-200 rounded-r">
             {section.tip}
           </blockquote>
         )}
 
         {/* Personal Notes */}
-        <div className="mb-4">
-          <label htmlFor="notes" className="font-semibold mb-1 block">Your Notes</label>
-          <textarea
-            id="notes"
-            className="w-full p-2 border border-gray-300 rounded-md"
-            rows={4}
-            placeholder="Write down your thoughts or questions..."
-            value={notes}
-            onChange={e => handleNotesChange(e.target.value)}
-          />
-        </div>
+        {!isFocusMode && (
+          <div className="mb-4">
+            <label htmlFor="notes" className="font-semibold mb-1 block">Your Notes</label>
+            <textarea
+              id="notes"
+              className="w-full p-2 border border-gray-300 dark:bg-gray-800 dark:border-gray-600 rounded-md"
+              rows={4}
+              placeholder="Write down your thoughts or questions..."
+              value={notes}
+              onChange={e => handleNotesChange(e.target.value)}
+            />
+          </div>
+        )}
 
         {/* Progress Bar */}
-        <div className="mb-4">
-          <Progress value={(currentSectionIndex / contentSections.length) * 100} />
-          <p className="text-sm text-gray-500 mt-1">
-            Reading Time: {Math.floor(readingProgress.standardText.readingTime / 60)}m{' '}
-            {readingProgress.standardText.readingTime % 60}s
-          </p>
-        </div>
+        {!isFocusMode && (
+          <div className="mb-4">
+            <Progress value={(currentSectionIndex / contentSections.length) * 100} />
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Reading Time: {Math.floor(readingProgress.standardText.readingTime / 60)}m{' '}
+              {readingProgress.standardText.readingTime % 60}s
+            </p>
+          </div>
+        )}
+
+        {/* Recall Question */}
+        {!showReviewMode && section.recall && answeredRecall[currentSectionIndex] === undefined && (
+          <div className="mb-4">
+            <h3 className="font-semibold mb-2">Check Your Understanding</h3>
+            <p className="mb-2">{section.recall.question}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {section.recall.options.map((opt, idx) => (
+                <Button
+                  key={idx}
+                  variant="secondary"
+                  onClick={() => handleRecallSelect(idx)}
+                  className="whitespace-normal"
+                >
+                  {opt}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Feedback after recall answered */}
+        {!showReviewMode && section.recall && answeredRecall[currentSectionIndex] !== undefined && feedback && (
+          <div
+            className={`mb-4 p-3 rounded-md border flex items-center space-x-2 ${
+              feedback.correct
+                ? 'bg-green-50 border-green-200 dark:bg-green-900 dark:border-green-700'
+                : 'bg-red-50 border-red-200 dark:bg-red-900 dark:border-red-700'
+            }`}
+          >
+            <StarIcon
+              className={`w-5 h-5 ${
+                feedback.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+              }`}
+            />
+            <span
+              className={`text-sm font-medium ${
+                feedback.correct ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'
+              }`}
+            >
+              {feedback.message}
+            </span>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex flex-col sm:flex-row items-center justify-between space-y-2 sm:space-y-0 sm:space-x-2">

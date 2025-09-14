@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Play, Pause, RotateCcw, Brain } from 'lucide-react';
+import { useSettings } from './SettingsContext';
+import { useLearning } from './LearningContext';
 
 /**
  * PersistentTimer
@@ -21,12 +23,11 @@ export interface PersistentTimerProps {
   isMinimalMode: boolean;
 }
 
-// Durations in seconds.  Adjust these values to change the length of focus
-// sessions and breaks.  The standard Pomodoro technique uses 25 minutes
-// focus, 5 minutes short break and 15 minutes long break every four sessions.
-const FOCUS_DURATION = 25 * 60;
-const SHORT_BREAK_DURATION = 5 * 60;
-const LONG_BREAK_DURATION = 15 * 60;
+// Default durations will be used if SettingsContext is not available or
+// loaded.  These values correspond to the classic Pomodoro technique.
+const DEFAULT_FOCUS_DURATION = 25 * 60;
+const DEFAULT_SHORT_BREAK_DURATION = 5 * 60;
+const DEFAULT_LONG_BREAK_DURATION = 15 * 60;
 
 // Key used to persist timer state in localStorage.  The stored object
 // contains the remaining time, whether a break is active and the number of
@@ -41,6 +42,17 @@ interface SavedTimerState {
 }
 
 export function PersistentTimer({ isMinimalMode }: PersistentTimerProps): JSX.Element {
+  // Obtain timer durations from the settings context.  If settings are not
+  // available (e.g. in SSR or before SettingsProvider is mounted), fall
+  // back to default Pomodoro values defined above.  Convert minutes to
+  // seconds on the fly.
+  const { timerDurations } = useSettings();
+  const focusDuration = (timerDurations?.focus ?? DEFAULT_FOCUS_DURATION / 60) * 60;
+  const shortBreakDuration = (timerDurations?.shortBreak ?? DEFAULT_SHORT_BREAK_DURATION / 60) * 60;
+  const longBreakDuration = (timerDurations?.longBreak ?? DEFAULT_LONG_BREAK_DURATION / 60) * 60;
+
+  // Access learning actions to award points and achievements for completed focus sessions.
+  const { addPoints, earnAchievement, achievementsEarned } = useLearning();
   // Attempt to load persisted timer state from localStorage on first render.
   const loadState = (): SavedTimerState | null => {
     if (typeof window === 'undefined') return null;
@@ -65,7 +77,7 @@ export function PersistentTimer({ isMinimalMode }: PersistentTimerProps): JSX.El
   const [timeLeft, setTimeLeft] = useState<number>(() => {
     const saved = loadState();
     if (saved) return saved.timeLeft;
-    return FOCUS_DURATION;
+    return focusDuration;
   });
   const [isBreak, setIsBreak] = useState<boolean>(() => {
     const saved = loadState();
@@ -123,14 +135,20 @@ export function PersistentTimer({ isMinimalMode }: PersistentTimerProps): JSX.El
       if (isBreak) {
         // End of a break – return to focus.
         setIsBreak(false);
-        setTimeLeft(FOCUS_DURATION);
+        setTimeLeft(focusDuration);
       } else {
         // End of a focus session – increment the session count and start a break.
-        setSessionCount(count => count + 1);
         const nextSession = sessionCount + 1;
+        setSessionCount(nextSession);
         const useLongBreak = nextSession % 4 === 0;
         setIsBreak(true);
-        setTimeLeft(useLongBreak ? LONG_BREAK_DURATION : SHORT_BREAK_DURATION);
+        setTimeLeft(useLongBreak ? longBreakDuration : shortBreakDuration);
+        // Award points for completing a focus session
+        addPoints(15);
+        // Unlock the focus session achievement on the first completed session
+        if (nextSession === 1 && !achievementsEarned.includes('focus-session')) {
+          earnAchievement('focus-session');
+        }
       }
     }
   }, [timeLeft, isRunning, isBreak, sessionCount]);
@@ -148,8 +166,8 @@ export function PersistentTimer({ isMinimalMode }: PersistentTimerProps): JSX.El
   // break, sessionCount reflects the number of completed focus periods
   // (including the one just finished), so we use it to pick long or short.
   const currentSessionTotal = isBreak
-    ? (sessionCount % 4 === 0 ? LONG_BREAK_DURATION : SHORT_BREAK_DURATION)
-    : FOCUS_DURATION;
+    ? (sessionCount % 4 === 0 ? longBreakDuration : shortBreakDuration)
+    : focusDuration;
   const progressPercent = (1 - timeLeft / currentSessionTotal) * 100;
 
   const handleToggle = () => {
@@ -159,7 +177,7 @@ export function PersistentTimer({ isMinimalMode }: PersistentTimerProps): JSX.El
   const handleReset = () => {
     setIsRunning(false);
     setIsBreak(false);
-    setTimeLeft(FOCUS_DURATION);
+    setTimeLeft(focusDuration);
     setSessionCount(0);
   };
 
