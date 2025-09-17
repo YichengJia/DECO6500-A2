@@ -169,6 +169,11 @@ export function StandardTextMode(): JSX.Element {
    */
   const [feedback, setFeedback] = useState<{ correct: boolean; message: string } | null>(null);
 
+  // Determine the learner's current section index.  This value is computed
+  // early so it can be referenced safely in dependency arrays below.  It is
+  // derived from the context state and recalculated on each render.
+  const currentSectionIndex = readingProgress.standardText.currentSection;
+
   // Update reading time every second while not in review mode
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -182,12 +187,11 @@ export function StandardTextMode(): JSX.Element {
 
   // Clear feedback whenever the learner navigates sections, enters/exits
   // review mode or toggles focus.  This prevents stale messages from
-  // persisting across interactions.
+  // persisting across interactions.  Because currentSectionIndex is
+  // defined above, it is safe to include in the dependency array.
   useEffect(() => {
     setFeedback(null);
   }, [currentSectionIndex, showReviewMode, isFocusMode]);
-
-  const currentSectionIndex = readingProgress.standardText.currentSection;
   const isCompleted = currentSectionIndex >= contentSections.length;
   const section = showReviewMode
     ? contentSections[reviewIndex]
