@@ -1,18 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 /**
- * BackgroundNoise Component
+ * BackgroundNoise Component (Fixed Version)
  *
- * Provides ambient sounds to help users with attention difficulties maintain focus.
- * Research shows that certain types of background noise can improve concentration
- * for people with ADHD by providing consistent sensory input.
- *
- * Features:
- * - Multiple noise types (white, pink, brown, nature sounds)
- * - Volume control
- * - Timer to auto-stop
- * - Smooth fade in/out transitions
- * - Saves preferences
+ * Fixed issues:
+ * - Continuous playback without stopping after 1-2 seconds
+ * - Proper audio context management
+ * - Better memory management
  */
 
 interface NoiseType {
@@ -59,28 +53,46 @@ export default function BackgroundNoise() {
   const [selectedNoise, setSelectedNoise] = useState<string>('pink');
   const [volume, setVolume] = useState(0.3);
   const [showPanel, setShowPanel] = useState(false);
-  const [timer, setTimer] = useState(0); // 0 means no timer
+  const [timer, setTimer] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
 
   const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<AudioBufferSourceNode | OscillatorNode | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | MediaStreamAudioSourceNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
 
-  // Create noise generator based on type
+  // Initialize audio context only once
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      stopNoise();
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
+
+  // Create continuous noise using ScriptProcessor (more reliable)
   const createNoiseGenerator = (type: string) => {
+    // Initialize or resume audio context
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    } else if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
     }
 
     const audioContext = audioContextRef.current;
 
-    // Stop existing noise
+    // Clean up existing nodes
     if (sourceNodeRef.current) {
       sourceNodeRef.current.disconnect();
-      if ('stop' in sourceNodeRef.current) {
-        sourceNodeRef.current.stop();
-      }
+    }
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
     }
 
     // Create gain node for volume control
@@ -88,110 +100,93 @@ export default function BackgroundNoise() {
     gainNodeRef.current.gain.value = volume;
     gainNodeRef.current.connect(audioContext.destination);
 
+    // Use ScriptProcessor for continuous noise generation
+    const bufferSize = 4096;
+    processorRef.current = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
     switch (type) {
       case 'white':
-        createWhiteNoise(audioContext);
+        createWhiteNoiseProcessor(processorRef.current);
         break;
       case 'pink':
-        createPinkNoise(audioContext);
+        createPinkNoiseProcessor(processorRef.current);
         break;
       case 'brown':
-        createBrownNoise(audioContext);
+        createBrownNoiseProcessor(processorRef.current);
         break;
       case 'nature':
-        createNatureSound(audioContext);
+        createNatureNoiseProcessor(processorRef.current);
         break;
     }
+
+    processorRef.current.connect(gainNodeRef.current);
   };
 
-  const createWhiteNoise = (audioContext: AudioContext) => {
-    const bufferSize = audioContext.sampleRate * 2; // 2 seconds of noise
-    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-    const output = buffer.getChannelData(0);
-
-    for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
-    }
-
-    const whiteNoise = audioContext.createBufferSource();
-    whiteNoise.buffer = buffer;
-    whiteNoise.loop = true;
-    whiteNoise.connect(gainNodeRef.current!);
-    whiteNoise.start();
-    sourceNodeRef.current = whiteNoise;
+  const createWhiteNoiseProcessor = (processor: ScriptProcessorNode) => {
+    processor.onaudioprocess = (e) => {
+      const output = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < output.length; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+    };
   };
 
-  const createPinkNoise = (audioContext: AudioContext) => {
-    const bufferSize = audioContext.sampleRate * 2;
-    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-    const output = buffer.getChannelData(0);
-
+  const createPinkNoiseProcessor = (processor: ScriptProcessorNode) => {
     let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-      b6 = white * 0.115926;
-    }
 
-    const pinkNoise = audioContext.createBufferSource();
-    pinkNoise.buffer = buffer;
-    pinkNoise.loop = true;
-    pinkNoise.connect(gainNodeRef.current!);
-    pinkNoise.start();
-    sourceNodeRef.current = pinkNoise;
+    processor.onaudioprocess = (e) => {
+      const output = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < output.length; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+        b6 = white * 0.115926;
+      }
+    };
   };
 
-  const createBrownNoise = (audioContext: AudioContext) => {
-    const bufferSize = audioContext.sampleRate * 2;
-    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-    const output = buffer.getChannelData(0);
-
+  const createBrownNoiseProcessor = (processor: ScriptProcessorNode) => {
     let lastOut = 0.0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      output[i] = (lastOut + (0.02 * white)) / 1.02;
-      lastOut = output[i];
-      output[i] *= 3.5; // Amplify to compensate for filtering
-    }
 
-    const brownNoise = audioContext.createBufferSource();
-    brownNoise.buffer = buffer;
-    brownNoise.loop = true;
-    brownNoise.connect(gainNodeRef.current!);
-    brownNoise.start();
-    sourceNodeRef.current = brownNoise;
+    processor.onaudioprocess = (e) => {
+      const output = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < output.length; i++) {
+        const white = Math.random() * 2 - 1;
+        output[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = output[i];
+        output[i] *= 3.5;
+      }
+    };
   };
 
-  const createNatureSound = (audioContext: AudioContext) => {
-    // For demo purposes, create a simple oscillating "wind" sound
-    // In production, you would load actual nature sound files
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    const lfo = audioContext.createOscillator();
-    const lfoGain = audioContext.createGain();
+  const createNatureNoiseProcessor = (processor: ScriptProcessorNode) => {
+    let phase = 0;
+    let lfoPhase = 0;
 
-    oscillator.type = 'sine';
-    oscillator.frequency.value = 120;
+    processor.onaudioprocess = (e) => {
+      const output = e.outputBuffer.getChannelData(0);
+      const sampleRate = e.outputBuffer.sampleRate;
 
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.2;
-    lfoGain.gain.value = 20;
+      for (let i = 0; i < output.length; i++) {
+        // Combine multiple sine waves for nature-like sound
+        const lfo = Math.sin(lfoPhase) * 0.3 + 0.7;
+        const carrier = Math.sin(phase) * lfo;
+        const noise = (Math.random() * 2 - 1) * 0.05;
 
-    lfo.connect(lfoGain);
-    lfoGain.connect(oscillator.frequency);
-    oscillator.connect(gainNode);
-    gainNode.gain.value = 0.05;
-    gainNode.connect(gainNodeRef.current!);
+        output[i] = (carrier + noise) * 0.1;
 
-    oscillator.start();
-    lfo.start();
-    sourceNodeRef.current = oscillator;
+        phase += (120 * 2 * Math.PI) / sampleRate;
+        lfoPhase += (0.2 * 2 * Math.PI) / sampleRate;
+
+        if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+        if (lfoPhase > 2 * Math.PI) lfoPhase -= 2 * Math.PI;
+      }
+    };
   };
 
   const startNoise = () => {
@@ -217,23 +212,28 @@ export default function BackgroundNoise() {
   };
 
   const stopNoise = () => {
-    if (sourceNodeRef.current) {
-      // Fade out
-      if (gainNodeRef.current) {
-        gainNodeRef.current.gain.exponentialRampToValueAtTime(
-          0.001,
-          (audioContextRef.current?.currentTime || 0) + 0.5
-        );
-      }
+    // Fade out smoothly
+    if (gainNodeRef.current && audioContextRef.current) {
+      const currentTime = audioContextRef.current.currentTime;
+      gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, currentTime);
+      gainNodeRef.current.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.5);
 
       setTimeout(() => {
+        // Disconnect nodes after fade out
+        if (processorRef.current) {
+          processorRef.current.disconnect();
+          processorRef.current.onaudioprocess = null;
+          processorRef.current = null;
+        }
         if (sourceNodeRef.current) {
           sourceNodeRef.current.disconnect();
-          if ('stop' in sourceNodeRef.current) {
-            sourceNodeRef.current.stop();
-          }
+          sourceNodeRef.current = null;
         }
-      }, 500);
+        if (gainNodeRef.current) {
+          gainNodeRef.current.disconnect();
+          gainNodeRef.current = null;
+        }
+      }, 600);
     }
 
     setIsPlaying(false);
@@ -241,26 +241,24 @@ export default function BackgroundNoise() {
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
+      timerRef.current = null;
     }
   };
 
+  // Update volume in real-time
   useEffect(() => {
     if (gainNodeRef.current && isPlaying) {
       gainNodeRef.current.gain.value = volume;
     }
   }, [volume, isPlaying]);
 
+  // Load saved preferences
   useEffect(() => {
-    // Load saved preferences
     const savedNoise = localStorage.getItem('preferredNoise');
     const savedVolume = localStorage.getItem('noiseVolume');
 
     if (savedNoise) setSelectedNoise(savedNoise);
     if (savedVolume) setVolume(parseFloat(savedVolume));
-
-    return () => {
-      stopNoise();
-    };
   }, []);
 
   const formatTime = (seconds: number) => {
@@ -275,7 +273,7 @@ export default function BackgroundNoise() {
         className="noise-toggle"
         onClick={() => setShowPanel(!showPanel)}
         aria-label="Background Noise"
-        title="Background Noise"
+        title="Background Noise for Focus"
         style={{
           background: isPlaying ? 'var(--brand-400)' : 'var(--surface-2)',
           border: '1px solid var(--surface-3)',
@@ -290,8 +288,13 @@ export default function BackgroundNoise() {
         }}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
-          <path d="M9 12l2 2l4 -4" />
+          {isPlaying ? (
+            <>
+              <path d="M12 2v20M6 6v12M18 9v6" strokeLinecap="round" />
+            </>
+          ) : (
+            <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+          )}
         </svg>
         {isPlaying && timeRemaining > 0 && (
           <span style={{ fontSize: '12px' }}>{formatTime(timeRemaining)}</span>

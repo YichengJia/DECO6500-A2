@@ -4,6 +4,7 @@ import BionicReader from "./components/BionicReader";
 import ReadingGuide from "./components/ReadingGuide";
 import BackgroundNoise from "./components/BackgroundNoise";
 import AccessibilityPanel from "./components/AccessibilityPanel";
+import DocumentReader from "./components/DocumentReader";
 
 // =============================================
 // Enhanced App.tsx — ADHD/Attention Deficit Helper
@@ -251,12 +252,31 @@ export default function App() {
     phone: 0, chat: 0, snack: 0, noise: 0
   });
 
-  // Timeline blocks
-  const blocks = useMemo(() => [
-    { label: "Class", start: "09:00", end: "10:30", color: "var(--brand-500)" },
-    { label: "Focus", start: "11:00", end: "12:00", color: "var(--ok-500)" },
-    { label: "Break", start: "12:00", end: "13:00", color: "var(--warn-500)" }
-  ], []);
+  // Timeline blocks - dynamic based on current time
+  const blocks = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+
+    // Generate realistic daily schedule
+    const schedule = [];
+
+    if (hour < 9) {
+      schedule.push({ label: "Morning Routine", start: "06:00", end: "09:00", color: "var(--warn-500)" });
+    }
+    schedule.push({ label: "Focus Block 1", start: "09:00", end: "10:30", color: "var(--brand-500)" });
+    schedule.push({ label: "Break", start: "10:30", end: "11:00", color: "var(--ok-500)" });
+    schedule.push({ label: "Focus Block 2", start: "11:00", end: "12:30", color: "var(--brand-500)" });
+    schedule.push({ label: "Lunch", start: "12:30", end: "13:30", color: "var(--warn-500)" });
+    schedule.push({ label: "Focus Block 3", start: "13:30", end: "15:00", color: "var(--brand-500)" });
+    schedule.push({ label: "Break", start: "15:00", end: "15:30", color: "var(--ok-500)" });
+    schedule.push({ label: "Focus Block 4", start: "15:30", end: "17:00", color: "var(--brand-500)" });
+
+    if (hour >= 17) {
+      schedule.push({ label: "Evening", start: "17:00", end: "22:00", color: "var(--warn-500)" });
+    }
+
+    return schedule;
+  }, []);
 
   // Timer tick
   useEffect(() => {
@@ -316,9 +336,10 @@ export default function App() {
   // Apply settings to document
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.fontSize = fontSize;
-    document.documentElement.dataset.lineHeight = lineHeight;
-  }, [theme, fontSize, lineHeight]);
+    document.body.dataset.fontSize = fontSize;
+    document.body.dataset.lineHeight = lineHeight;
+    document.body.dataset.reduceMotion = String(reduceMotion);
+  }, [theme, fontSize, lineHeight, reduceMotion]);
 
   return (
     <div className="appRoot">
@@ -483,15 +504,14 @@ export default function App() {
           <DistractionBars data={distractions} />
         </section>
 
-        {/* Bionic Reader Demo */}
-        {bionicReadingEnabled && (
-          <section className="card bionic">
-            <h3>Bionic Reading Sample</h3>
-            <BionicReader
-              text="Focus on important information. This technique helps your brain process text more efficiently by highlighting the beginning of each word, allowing your eyes to glide through content faster while maintaining comprehension."
-            />
-          </section>
-        )}
+        {/* Document Reader - Replaces Bionic Sample */}
+        <section className="card document-section" style={{ gridColumn: 'span 2' }}>
+          <h3>📚 Document Reader</h3>
+          <p className="muted" style={{ marginBottom: '16px' }}>
+            Upload PDFs, text files, or paste content for reading with Text-to-Speech and Bionic Reading
+          </p>
+          <DocumentReader />
+        </section>
 
         {/* Daily Timeline */}
         <section className="card timeline-section">
@@ -546,14 +566,20 @@ const globalStyles = `
   --surface-1: #1a1a1a;
   --surface-2: #2a2a2a;
   --surface-3: #3a3a3a;
-  --text-1: #ffffff;
-  --text-2: #e0e0e0;
+  --text-1: #000000; /* Changed to black for better contrast on yellow */
+  --text-2: #333333; /* Darker gray for better contrast */
   --brand-400: #ffff00;
   --brand-500: #ffff00;
+  --ok-500: #008000; /* Darker green */
+  --warn-500: #ff6600; /* Darker orange */
+  --bad-500: #cc0000; /* Darker red */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html { 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; 
+  font-size: 16px; /* Base font size */
+}
 body { margin: 0; overflow-x: hidden; }
 
 .appRoot { position: relative; min-height: 100vh; background: linear-gradient(180deg, var(--bg-1), var(--bg-2)); color: var(--text-1); }
@@ -652,14 +678,53 @@ kbd { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; font-f
 
 // ---------- Accessibility Styles ----------
 const accessibilityStyles = `
-:root[data-fontSize="small"] { font-size: 14px; }
-:root[data-fontSize="medium"] { font-size: 16px; }
-:root[data-fontSize="large"] { font-size: 18px; }
-:root[data-fontSize="xlarge"] { font-size: 20px; }
+/* Font size adjustments - apply to body for inheritance */
+body[data-fontSize="small"] { font-size: 14px !important; }
+body[data-fontSize="medium"] { font-size: 16px !important; }
+body[data-fontSize="large"] { font-size: 18px !important; }
+body[data-fontSize="xlarge"] { font-size: 20px !important; }
 
-:root[data-lineHeight="normal"] { line-height: 1.5; }
-:root[data-lineHeight="relaxed"] { line-height: 1.8; }
-:root[data-lineHeight="loose"] { line-height: 2.2; }
+/* Line height adjustments */
+body[data-lineHeight="normal"] * { line-height: 1.5 !important; }
+body[data-lineHeight="relaxed"] * { line-height: 1.8 !important; }
+body[data-lineHeight="loose"] * { line-height: 2.2 !important; }
+
+/* Reduce motion - disable animations when enabled */
+@media (prefers-reduced-motion: reduce), (prefers-reduced-motion: no-preference) {
+  body[data-reduceMotion="true"] * {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  body[data-reduceMotion="true"] .breathCircle {
+    animation: none !important;
+  }
+  
+  body[data-reduceMotion="true"] .confetti {
+    display: none !important;
+  }
+  
+  body[data-reduceMotion="true"] .progressBar {
+    transition: none !important;
+  }
+}
+
+/* High contrast mode improvements */
+body[data-theme="hc"] .btn.primary {
+  background: #000000 !important;
+  color: #ffff00 !important;
+  border: 2px solid #ffff00 !important;
+}
+
+body[data-theme="hc"] .task.done {
+  opacity: 1 !important;
+  background: #2a2a2a !important;
+}
+
+body[data-theme="hc"] .barFill {
+  background: #ffff00 !important;
+  color: #000000 !important;
+}
 `;
 
 // ---------- Bionic Reading Styles ----------
