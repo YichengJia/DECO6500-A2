@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import TextToSpeech from "./components/TextToSpeech";
+import BionicReader from "./components/BionicReader";
+import ReadingGuide from "./components/ReadingGuide";
+import BackgroundNoise from "./components/BackgroundNoise";
+import AccessibilityPanel from "./components/AccessibilityPanel";
 
 // =============================================
-// App.tsx — Single-file visual, animated ADHD helper
-// - No external UI libs; pure React + inline <style> CSS
-// - English-only comments (per user request)
-// - Rich visuals: animated gradient, glass cards, SVG charts
-// - Features: Focus Timer (Pomodoro), Tasks with progress,
-//             Mood check-ins (sparkline), Breathing coach,
-//             Distraction logger (bar viz), Visual day timeline,
-//             Theme (Light/Dark/High-Contrast) + Reduce Motion
-// - LocalStorage persistence for user data and settings
+// Enhanced App.tsx — ADHD/Attention Deficit Helper
+// - Includes Text-to-Speech, Bionic Reading, Reading Guide
+// - Background noise for focus, Accessibility controls
+// - All original features preserved
 // =============================================
 
 // ---------- Types ----------
@@ -18,12 +18,12 @@ interface Task {
   title: string;
   priority: "low" | "medium" | "high";
   done: boolean;
-  minutes: number; // estimate
+  minutes: number;
 }
 
 interface MoodEntry {
-  t: number; // timestamp
-  mood: 1 | 2 | 3 | 4 | 5; // 1 low, 5 high
+  t: number;
+  mood: 1 | 2 | 3 | 4 | 5;
   energy: 1 | 2 | 3 | 4 | 5;
 }
 
@@ -54,7 +54,7 @@ function useLocalStorage<T>(key: string, initial: T) {
   return [value, setValue] as const;
 }
 
-// ---------- Confetti (simple, no deps) ----------
+// ---------- Confetti ----------
 function burstConfetti(root: HTMLElement, reduceMotion: boolean) {
   if (reduceMotion) return;
   const n = 36;
@@ -66,14 +66,13 @@ function burstConfetti(root: HTMLElement, reduceMotion: boolean) {
     el.style.left = `${50 + (Math.random() * 20 - 10)}%`;
     el.style.top = `50%`;
     root.appendChild(el);
-    // schedule cleanup
     setTimeout(() => root.contains(el) && root.removeChild(el), 1400);
   }
 }
 
 // ---------- SVG Gauge ----------
 function CircularProgress({
-  progress, // 0..1
+  progress,
   size = 240,
   stroke = 14,
   palette = "var(--brand-400)"
@@ -84,77 +83,62 @@ function CircularProgress({
   palette?: string;
 }) {
   const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const dash = c * clamp(progress, 0, 1);
+  const c = Math.PI * r * 2;
+  const offset = c - progress * c;
+
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-      <defs>
-        <linearGradient id="gauge" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="var(--brand-300)" />
-          <stop offset="100%" stopColor="var(--brand-500)" />
-        </linearGradient>
-      </defs>
+    <svg width={size} height={size}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
       <circle
-        cx={size / 2}
-        cy={size / 2}
+        cx={size/2}
+        cy={size/2}
         r={r}
-        stroke="var(--surface-3)"
-        strokeWidth={stroke}
         fill="none"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        stroke={palette === "brand" ? "url(#gauge)" : palette}
+        stroke={palette === "brand" ? "var(--brand-400)" : palette}
         strokeWidth={stroke}
-        strokeLinecap="round"
-        fill="none"
-        strokeDasharray={`${dash} ${c}`}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{ transition: "stroke-dashoffset 0.5s" }}
       />
     </svg>
   );
 }
 
-// ---------- Sparkline (mood history) ----------
-function Sparkline({ data, width = 220, height = 48, color = "var(--brand-400)" }: {
-  data: number[];
-  width?: number;
-  height?: number;
-  color?: string;
-}) {
-  const max = Math.max(1, ...data);
-  const min = Math.min(0, ...data);
-  const points = data.map((v, i) => {
-    const x = (i / Math.max(1, data.length - 1)) * (width - 8) + 4;
-    const y = height - 6 - ((v - min) / Math.max(1, max - min)) * (height - 12);
-    return `${x},${y}`;
-  });
+// ---------- Mood Chart ----------
+function MoodSparkline({ moods }: { moods: MoodEntry[] }) {
+  if (moods.length < 2) return <div className="muted tiny">Not enough data</div>;
+
+  const w = 280, h = 60;
+  const points = moods.slice(-20).map((m, i, arr) => ({
+    x: (i / (arr.length - 1)) * (w - 20) + 10,
+    y: h - 10 - ((m.mood - 1) / 4) * (h - 20)
+  }));
+
+  const pathData = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+
   return (
-    <svg width={width} height={height} aria-hidden>
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth={2.5}
-        points={points.join(" ")}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
+    <svg width={w} height={h}>
+      <path d={pathData} fill="none" stroke="var(--brand-400)" strokeWidth="2" />
+      {points.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r="3" fill="var(--brand-400)" />
+      ))}
     </svg>
   );
 }
 
-// ---------- BarViz (distraction counts by type) ----------
-function BarViz({ series }: { series: { label: string; value: number }[] }) {
-  const max = Math.max(1, ...series.map((s) => s.value));
+// ---------- Distraction Viz ----------
+function DistractionBars({ data }: { data: { [k: string]: number } }) {
+  const max = Math.max(...Object.values(data), 1);
+
   return (
     <div className="bars">
-      {series.map((s) => (
-        <div className="bar" key={s.label} aria-label={`${s.label} ${s.value}`}>
-          <div className="barFill" style={{ height: `${(s.value / max) * 100}%` }} />
-          <span className="barLabel">{s.label}</span>
-          <span className="barValue">{s.value}</span>
+      {Object.entries(data).map(([k, v]) => (
+        <div key={k} className="bar">
+          <div className="barFill" style={{ height: `${(v / max) * 60}px` }}>
+            <span>{v}</span>
+          </div>
+          <span className="barLabel">{k}</span>
         </div>
       ))}
     </div>
@@ -164,11 +148,10 @@ function BarViz({ series }: { series: { label: string; value: number }[] }) {
 // ---------- Breathing Coach ----------
 function BreathingCoach({ enabled, reduceMotion }: { enabled: boolean; reduceMotion: boolean }) {
   if (!enabled) return null;
+
   return (
-    <div className="card" role="region" aria-label="Breathing coach">
-      <h3>Breathing Coach</h3>
-      <p className="muted">Follow the circle: inhale → hold → exhale</p>
-      <div className={`breathWrap ${reduceMotion ? "noMotion" : ""}`}>
+    <div className="breathing">
+      <div className={`breathOuter ${reduceMotion ? "noMotion" : ""}`}>
         <div className="breathCircle" />
       </div>
       <div className="breathGuide">
@@ -180,21 +163,21 @@ function BreathingCoach({ enabled, reduceMotion }: { enabled: boolean; reduceMot
   );
 }
 
-// ---------- Visual Day Timeline ----------
+// ---------- Timeline ----------
 function Timeline({ blocks }: { blocks: { label: string; start: string; end: string; color: string }[] }) {
-  // expects HH:MM 24h strings
   const toMins = (s: string) => {
     const [h, m] = s.split(":").map(Number);
     return h * 60 + m;
   };
   const dayTotal = 24 * 60;
+
   return (
-    <div className="timeline" role="list" aria-label="Today schedule timeline">
+    <div className="timeline" role="list">
       {blocks.map((b) => {
         const l = (toMins(b.start) / dayTotal) * 100;
         const w = ((toMins(b.end) - toMins(b.start)) / dayTotal) * 100;
         return (
-          <div className="timeBlock" style={{ left: `${l}%`, width: `${w}%`, background: b.color }} key={b.label} role="listitem">
+          <div className="timeBlock" style={{ left: `${l}%`, width: `${w}%`, background: b.color }} key={b.label}>
             <span>{b.label}</span>
           </div>
         );
@@ -203,11 +186,48 @@ function Timeline({ blocks }: { blocks: { label: string; start: string; end: str
   );
 }
 
+// ---------- Task Composer ----------
+function TaskComposer({ onAdd }: { onAdd: (title: string) => void }) {
+  const [val, setVal] = useState("");
+  return (
+    <form className="composer" onSubmit={(e) => {
+      e.preventDefault();
+      onAdd(val);
+      setVal("");
+    }}>
+      <input className="input" placeholder="Add small task…" value={val} onChange={(e) => setVal(e.target.value)} />
+      <button className="btn primary" type="submit">Add</button>
+    </form>
+  );
+}
+
+// ---------- Keybindings ----------
+function Keybindings({ running, setRunning }: { running: boolean; setRunning: (f: (x: boolean) => boolean) => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" && e.target === document.body) {
+        e.preventDefault();
+        setRunning((r) => !r);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setRunning]);
+  return null;
+}
+
 // ---------- Main App ----------
 export default function App() {
   // Theme & UX settings
   const [theme, setTheme] = useLocalStorage<"light" | "dark" | "hc">("set.theme", "dark");
   const [reduceMotion, setReduceMotion] = useLocalStorage<boolean>("set.reduceMotion", false);
+
+  // New Accessibility Features
+  const [showAccessibility, setShowAccessibility] = useState(false);
+  const [fontSize, setFontSize] = useLocalStorage<"small" | "medium" | "large" | "xlarge">("set.fontSize", "medium");
+  const [lineHeight, setLineHeight] = useLocalStorage<"normal" | "relaxed" | "loose">("set.lineHeight", "normal");
+  const [showReadingGuide, setShowReadingGuide] = useLocalStorage<boolean>("set.readingGuide", false);
+  const [bionicReadingEnabled, setBionicReadingEnabled] = useLocalStorage<boolean>("set.bionicReading", false);
 
   // Tasks
   const [tasks, setTasks] = useLocalStorage<Task[]>("data.tasks", [
@@ -216,7 +236,7 @@ export default function App() {
     { id: uid(), title: "Refactor timer logic", priority: "low", done: false, minutes: 15 }
   ]);
 
-  // Focus timer (Pomodoro-like)
+  // Focus timer
   type Phase = "focus" | "short" | "long";
   const [phase, setPhase] = useLocalStorage<Phase>("timer.phase", "focus");
   const [lengths, setLengths] = useLocalStorage("timer.lengths", { focus: 25 * 60, short: 5 * 60, long: 15 * 60 });
@@ -225,137 +245,116 @@ export default function App() {
   const tickRef = useRef<number | null>(null);
   const confettiRef = useRef<HTMLDivElement>(null);
 
-  // Mood + energy check-ins
+  // Mood & distractions
   const [moods, setMoods] = useLocalStorage<MoodEntry[]>("data.moods", []);
-
-  // Distraction logger
   const [distractions, setDistractions] = useLocalStorage<{ [k: string]: number }>("data.distractions", {
-    phone: 0,
-    chat: 0,
-    snack: 0,
-    noise: 0
+    phone: 0, chat: 0, snack: 0, noise: 0
   });
 
-  // Timeline sample blocks
+  // Timeline blocks
   const blocks = useMemo(() => [
     { label: "Class", start: "09:00", end: "10:30", color: "var(--brand-500)" },
     { label: "Focus", start: "11:00", end: "12:00", color: "var(--ok-500)" },
-    { label: "Break", start: "12:00", end: "12:30", color: "var(--warn-500)" },
-    { label: "Prototype", start: "13:00", end: "15:00", color: "var(--brand-400)" }
+    { label: "Break", start: "12:00", end: "13:00", color: "var(--warn-500)" }
   ], []);
 
-  // Persist remaining when phase changes
+  // Timer tick
   useEffect(() => {
-    if (remaining > lengths[phase]) setRemaining(lengths[phase]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, lengths]);
-
-  // Timer loop
-  useEffect(() => {
-    if (!running) {
-      if (tickRef.current) cancelAnimationFrame(tickRef.current);
-      tickRef.current = null;
-      return;
-    }
-    let last = performance.now();
-    const loop = (t: number) => {
-      const dt = t - last;
-      if (dt >= 1000) {
-        setRemaining((r) => {
-          const next = r - Math.floor(dt / 1000);
-          if (next <= 0) {
-            // complete phase
-            setRunning(false);
-            setRemaining(0);
-            // confetti burst
-            if (confettiRef.current) burstConfetti(confettiRef.current, reduceMotion);
-          }
-          return Math.max(0, next);
-        });
-        last = t;
+    if (running && remaining > 0) {
+      tickRef.current = window.setTimeout(() => {
+        setRemaining((r) => Math.max(0, r - 1));
+      }, 1000);
+      return () => {
+        if (tickRef.current) clearTimeout(tickRef.current);
+      };
+    } else if (running && remaining === 0) {
+      setRunning(false);
+      if (confettiRef.current && phase === "focus") {
+        burstConfetti(confettiRef.current, reduceMotion);
       }
-      tickRef.current = requestAnimationFrame(loop);
-    };
-    tickRef.current = requestAnimationFrame(loop);
-    return () => {
-      if (tickRef.current) cancelAnimationFrame(tickRef.current);
-      tickRef.current = null;
-    };
-  }, [running, reduceMotion, setRemaining]);
+    }
+  }, [running, remaining, phase, setRemaining, setRunning, reduceMotion]);
 
-  // Derived
   const total = lengths[phase];
-  const pct = total ? 1 - remaining / total : 0;
-  const tasksDone = tasks.filter((t) => t.done).length;
-  const tasksPct = tasks.length ? (tasksDone / tasks.length) : 0;
+  const pct = total > 0 ? clamp(1 - remaining / total, 0, 1) : 0;
+  const tasksPct = tasks.length ? tasks.filter((t) => t.done).length / tasks.length : 0;
 
-  // Handlers — Tasks
+  // Handlers
   function addTask(title: string) {
     if (!title.trim()) return;
     setTasks((prev) => [{ id: uid(), title, priority: "medium", done: false, minutes: 15 }, ...prev]);
   }
+
   function toggleTask(id: string) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
   }
+
   function delTask(id: string) {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 
-  // Handlers — Timer
   function switchPhase(next: Phase) {
     setPhase(next);
     setRemaining(lengths[next]);
     setRunning(false);
   }
+
   function resetTimer() {
     setRemaining(lengths[phase]);
     setRunning(false);
   }
 
-  // Handlers — Mood
   function addMood(mood: MoodEntry["mood"], energy: MoodEntry["energy"]) {
     const entry: MoodEntry = { t: Date.now(), mood, energy };
-    setMoods((prev) => [...prev.slice(-49), entry]); // keep last 50
+    setMoods((prev) => [...prev.slice(-49), entry]);
   }
 
-  // Handlers — Distractions
   function bump(label: keyof typeof distractions) {
     setDistractions((d) => ({ ...d, [label]: d[label] + 1 }));
   }
 
-  // Apply theme to <html>
+  // Apply settings to document
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    document.documentElement.dataset.fontSize = fontSize;
+    document.documentElement.dataset.lineHeight = lineHeight;
+  }, [theme, fontSize, lineHeight]);
 
   return (
     <div className="appRoot">
-      {/* Global styles (self-contained) */}
       <style>{globalStyles}</style>
+      <style>{accessibilityStyles}</style>
       <div className="bg" aria-hidden />
+
+      {/* Accessibility Features */}
+      {showReadingGuide && <ReadingGuide />}
+      {bionicReadingEnabled && <style>{bionicStyles}</style>}
 
       <header className="topbar">
         <div className="brand">
-          <span className="logo">⏳</span>
-          <strong>ADHD Focus Studio</strong>
+          <span className="logo">🧠</span>
+          <strong>Focus Assistant - SDG 4.5</strong>
         </div>
         <div className="spacer" />
-        <div className="toggles" role="group" aria-label="Display settings">
+        <div className="controls">
+          <button
+            className="btn icon"
+            onClick={() => setShowAccessibility(!showAccessibility)}
+            aria-label="Accessibility settings"
+            title="Accessibility"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="12" cy="4" r="2"/>
+              <path d="M12 6v8m0 0l-3 3m3-3l3 3M5 12h14"/>
+            </svg>
+          </button>
+          <TextToSpeech />
+          <BackgroundNoise />
           <label className="chip">
-            <input
-              type="checkbox"
-              checked={reduceMotion}
-              onChange={(e) => setReduceMotion(e.target.checked)}
-            />
+            <input type="checkbox" checked={reduceMotion} onChange={(e) => setReduceMotion(e.target.checked)} />
             <span>Reduce Motion</span>
           </label>
-          <select
-            aria-label="Theme"
-            className="select"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as any)}
-            title="Theme"
-          >
+          <select className="select" value={theme} onChange={(e) => setTheme(e.target.value as any)}>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
             <option value="hc">High Contrast</option>
@@ -363,15 +362,28 @@ export default function App() {
         </div>
       </header>
 
+      {/* Accessibility Panel */}
+      {showAccessibility && (
+        <AccessibilityPanel
+          fontSize={fontSize}
+          setFontSize={setFontSize}
+          lineHeight={lineHeight}
+          setLineHeight={setLineHeight}
+          showReadingGuide={showReadingGuide}
+          setShowReadingGuide={setShowReadingGuide}
+          bionicReadingEnabled={bionicReadingEnabled}
+          setBionicReadingEnabled={setBionicReadingEnabled}
+          onClose={() => setShowAccessibility(false)}
+        />
+      )}
+
       <main className="grid">
         {/* Left: Focus Timer */}
-        <section className="card focus" aria-label="Focus timer">
-          <div className="phaseTabs" role="tablist" aria-label="Timer phases">
+        <section className="card focus">
+          <div className="phaseTabs">
             {(["focus", "short", "long"] as Phase[]).map((p) => (
               <button
                 key={p}
-                role="tab"
-                aria-selected={phase === p}
                 className={`tab ${phase === p ? "active" : ""}`}
                 onClick={() => switchPhase(p)}
               >
@@ -383,11 +395,11 @@ export default function App() {
           <div className="gaugeWrap" ref={confettiRef}>
             <CircularProgress progress={pct} size={260} stroke={16} palette="brand" />
             <div className="gaugeCenter">
-              <div className="time" aria-live="polite">{formatMMSS(remaining)}</div>
-              <div className="subtime">{phase === "focus" ? "Stay on one small task" : "Relax your eyes & shoulders"}</div>
+              <div className="time">{formatMMSS(remaining)}</div>
+              <div className="subtime">{phase === "focus" ? "Stay on one small task" : "Relax your eyes"}</div>
               <div className="controls">
                 <button className="btn primary" onClick={() => setRunning((r) => !r)}>
-                  {running ? "Pause" : remaining === 0 ? "Start" : "Start"}
+                  {running ? "Pause" : "Start"}
                 </button>
                 <button className="btn" onClick={resetTimer}>Reset</button>
               </div>
@@ -417,66 +429,72 @@ export default function App() {
           </div>
         </section>
 
-        {/* Right: Tasks + Progress */}
-        <section className="card tasks" aria-label="Tasks">
+        {/* Right: Tasks */}
+        <section className="card tasks">
           <h3>Task Board</h3>
-          <p className="muted">Keep it tiny: add 10–25 min tasks. Tap to complete.</p>
+          <p className="muted">Keep tasks small (10-25 min). Tap to complete.</p>
           <TaskComposer onAdd={addTask} />
-          <div className="taskList" role="list">
+          <div className="taskList">
             {tasks.map((t) => (
-              <div className={`task ${t.done ? "done" : ""}`} key={t.id} role="listitem">
-                <button className="chk" aria-label={t.done ? "Mark as not done" : "Mark as done"} onClick={() => toggleTask(t.id)}>
-                  {t.done ? "✔" : "○"}
+              <div className={`task ${t.done ? "done" : ""}`} key={t.id}>
+                <button className="chk" onClick={() => toggleTask(t.id)}>
+                  {t.done ? "✓" : "○"}
                 </button>
-                <div className="taskMain">
-                  <div className="taskTitle">{t.title}</div>
-                  <div className="taskMeta">
-                    <span className={`pill ${t.priority}`}>{t.priority}</span>
-                    <span className="pill ghost">{t.minutes} min</span>
-                  </div>
+                <div className={bionicReadingEnabled ? "bionic-text" : ""}>
+                  <span className="taskTitle">{t.title}</span>
+                  <span className="taskMeta">{t.priority} • {t.minutes} min</span>
                 </div>
-                <button className="del" aria-label="Delete" onClick={() => delTask(t.id)}>×</button>
+                <button className="del" onClick={() => delTask(t.id)}>×</button>
               </div>
             ))}
           </div>
-          <div className="progressBar" aria-label="Task progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(tasksPct * 100)}>
-            <div className="progressFill" style={{ width: `${tasksPct * 100}%` }} />
+          <div className="progress">
+            <div className="progressBar" style={{ width: `${tasksPct * 100}%` }} />
           </div>
         </section>
 
-        {/* Mood & Energy */}
-        <section className="card" aria-label="Mood and energy">
-          <h3>Mood & Energy Check‑in</h3>
-          <div className="moodRow">
-            <div className="moodBtns">
-              {[1, 2, 3, 4, 5].map((m) => (
-                <button key={m} className="face" onClick={() => addMood(m as 1|2|3|4|5, 3 as 1|2|3|4|5)} title={`Mood ${m}`}>
-                  <span aria-hidden>{["😟","🙁","😐","🙂","😄"][m-1]}</span>
+        {/* Mood Tracker */}
+        <section className="card mood">
+          <h3>Mood Check-in</h3>
+          <div className="moodButtons">
+            <div className="moodRow">
+              <span>Mood:</span>
+              {[1, 2, 3, 4, 5].map((v) => (
+                <button key={v} className="moodBtn" onClick={() => addMood(v as any, 3)}>
+                  {["😞", "😕", "😐", "🙂", "😊"][v - 1]}
                 </button>
               ))}
             </div>
-            <div className="spark">
-              <Sparkline data={moods.map((x) => x.mood)} />
-              <div className="muted tiny">Last {moods.length} check‑ins</div>
-            </div>
           </div>
+          <MoodSparkline moods={moods} />
         </section>
 
-        {/* Distraction logger */}
-        <section className="card" aria-label="Distraction logger">
+        {/* Distraction Logger */}
+        <section className="card distractions">
           <h3>Distraction Logger</h3>
-          <div className="chips">
+          <p className="muted">Track what pulls your focus</p>
+          <div className="distButtons">
             {Object.keys(distractions).map((k) => (
-              <button key={k} className="chipBtn" onClick={() => bump(k as keyof typeof distractions)}>
-                + {k}
+              <button key={k} className="distBtn" onClick={() => bump(k as any)}>
+                {k === "phone" ? "📱" : k === "chat" ? "💬" : k === "snack" ? "🍪" : "🔊"} {k}
               </button>
             ))}
           </div>
-          <BarViz series={Object.entries(distractions).map(([label, value]) => ({ label, value }))} />
+          <DistractionBars data={distractions} />
         </section>
 
-        {/* Timeline & Breathing */}
-        <section className="card" aria-label="Today plan">
+        {/* Bionic Reader Demo */}
+        {bionicReadingEnabled && (
+          <section className="card bionic">
+            <h3>Bionic Reading Sample</h3>
+            <BionicReader
+              text="Focus on important information. This technique helps your brain process text more efficiently by highlighting the beginning of each word, allowing your eyes to glide through content faster while maintaining comprehension."
+            />
+          </section>
+        )}
+
+        {/* Daily Timeline */}
+        <section className="card timeline-section">
           <h3>Today Timeline</h3>
           <Timeline blocks={blocks} />
           <BreathingCoach enabled={true} reduceMotion={reduceMotion} />
@@ -484,60 +502,20 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <div className="muted tiny">Tip: Press <kbd>Space</kbd> to start/pause the timer.</div>
+        <div className="muted tiny">Tip: Press <kbd>Space</kbd> to start/pause timer</div>
         <div className="spacer" />
-        <div className="muted tiny">© 2025 ADHD Focus Studio</div>
+        <div className="muted tiny">© 2025 Focus Assistant - Supporting SDG 4.5</div>
       </footer>
 
-      {/* Keyboard shortcut */}
       <Keybindings running={running} setRunning={setRunning} />
     </div>
   );
 }
 
-// ---------- Task Composer ----------
-function TaskComposer({ onAdd }: { onAdd: (title: string) => void }) {
-  const [val, setVal] = useState("");
-  return (
-    <form
-      className="composer"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onAdd(val);
-        setVal("");
-      }}
-    >
-      <input
-        className="input"
-        placeholder="Add small task…"
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        aria-label="New task"
-      />
-      <button className="btn primary" type="submit">Add</button>
-    </form>
-  );
-}
-
-// ---------- Keybindings ----------
-function Keybindings({ running, setRunning }: { running: boolean; setRunning: (f: (x: boolean) => boolean) => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        setRunning((r) => !r);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setRunning]);
-  return null;
-}
-
-// ---------- Global CSS ----------
+// ---------- Global Styles ----------
 const globalStyles = `
 :root {
-  --bg-1: #0b1020; /* dark gradient base */
+  --bg-1: #0b1020;
   --bg-2: #1a2240;
   --surface-1: rgba(255,255,255,.06);
   --surface-2: rgba(255,255,255,.12);
@@ -551,66 +529,54 @@ const globalStyles = `
   --warn-500: #f59e0b;
   --bad-500: #ef4444;
 }
+
 :root[data-theme="light"] {
   --bg-1: #f7f8fc;
   --bg-2: #e9ecfb;
   --surface-1: rgba(15,23,42,.06);
-  --surface-2: rgba(15,23,42,.1);
-  --surface-3: rgba(15,23,42,.16);
-  --text-1: #0b1020;
-  --text-2: #2b3356;
-  --brand-300: #6b8cff;
-  --brand-400: #3d6bff;
-  --brand-500: #1d4fff;
+  --surface-2: rgba(15,23,42,.12);
+  --surface-3: rgba(15,23,42,.18);
+  --text-1: #0f172a;
+  --text-2: #475569;
 }
+
 :root[data-theme="hc"] {
-  --bg-1: #000;
-  --bg-2: #000;
-  --surface-1: #111;
-  --surface-2: #161616;
-  --surface-3: #1c1c1c;
-  --text-1: #fff;
-  --text-2: #d6d6d6;
-  --brand-300: #fff;
-  --brand-400: #fff;
-  --brand-500: #fff;
+  --bg-1: #000000;
+  --bg-2: #0a0a0a;
+  --surface-1: #1a1a1a;
+  --surface-2: #2a2a2a;
+  --surface-3: #3a3a3a;
+  --text-1: #ffffff;
+  --text-2: #e0e0e0;
+  --brand-400: #ffff00;
+  --brand-500: #ffff00;
 }
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; }
-body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji"; color: var(--text-1); background: var(--bg-1); }
 
-.appRoot { isolation: isolate; min-height: 100%; position: relative; }
-.bg { position: fixed; inset: 0; background:
-  radial-gradient(60vw 60vw at 10% 10%, var(--brand-500)10%, transparent 60%),
-  radial-gradient(50vw 50vw at 90% 20%, #0ea5e9 12%, transparent 60%),
-  radial-gradient(40vw 40vw at 50% 90%, #22c55e 10%, transparent 60%),
-  linear-gradient(180deg, var(--bg-1), var(--bg-2));
-  filter: saturate(.9) hue-rotate(0deg);
-  animation: hue 24s linear infinite;
-  z-index: -1;
-}
-@keyframes hue { to { filter: saturate(1) hue-rotate(360deg); } }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { margin: 0; overflow-x: hidden; }
 
-.topbar { position: sticky; top: 0; display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: linear-gradient(180deg, rgba(0,0,0,.25), transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--surface-2);
-}
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
-.logo { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: var(--surface-2); }
+.appRoot { position: relative; min-height: 100vh; background: linear-gradient(180deg, var(--bg-1), var(--bg-2)); color: var(--text-1); }
+
+.bg { position: fixed; inset: 0; background: radial-gradient(circle at 20% 50%, rgba(81,131,255,.15), transparent 70%), radial-gradient(circle at 80% 80%, rgba(255,131,81,.1), transparent 70%); pointer-events: none; }
+
+.topbar { display: flex; align-items: center; padding: 16px 24px; background: var(--surface-1); backdrop-filter: blur(10px); border-bottom: 1px solid var(--surface-2); }
+.brand { display: flex; align-items: center; gap: 8px; }
+.logo { font-size: 24px; }
 .spacer { flex: 1; }
-.toggles { display: flex; align-items: center; gap: 10px; }
-.select { appearance: none; background: var(--surface-1); color: var(--text-1); border: 1px solid var(--surface-2); border-radius: 10px; padding: 8px 12px; }
-.chip { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-1); border: 1px solid var(--surface-2); padding: 6px 10px; border-radius: 999px; cursor: pointer; }
-.chip input { accent-color: var(--brand-500); }
+.controls { display: flex; gap: 12px; align-items: center; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface-2); border-radius: 20px; cursor: pointer; }
+.select { background: var(--surface-2); border: 1px solid var(--surface-3); color: var(--text-1); padding: 6px 10px; border-radius: 8px; }
 
 .grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); gap: 16px; padding: 18px; max-width: 1200px; margin: 0 auto; }
 @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
 
-.card { background: linear-gradient(180deg, var(--surface-1), transparent); border: 1px solid var(--surface-2); border-radius: 18px; padding: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.18) inset, 0 8px 24px rgba(0,0,0,.25);
-}
+.card { background: linear-gradient(180deg, var(--surface-1), transparent); border: 1px solid var(--surface-2); border-radius: 18px; padding: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.18) inset, 0 8px 24px rgba(0,0,0,.25); }
 .card h3 { margin: 4px 0 8px; font-size: 18px; letter-spacing: .2px; }
 .muted { color: var(--text-2); }
 .tiny { font-size: 12px; }
 
-/* Focus timer */
 .focus { grid-row: span 2; display: grid; gap: 8px; align-content: start; }
 .phaseTabs { display: inline-flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--surface-1); border: 1px solid var(--surface-2); }
 .tab { border: 0; background: transparent; color: var(--text-2); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
@@ -620,61 +586,100 @@ body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI
 .time { font-size: 44px; font-weight: 700; letter-spacing: 1px; }
 .subtime { font-size: 13px; color: var(--text-2); }
 .controls { display: flex; gap: 8px; margin-top: 6px; }
-.btn { border: 1px solid var(--surface-2); background: var(--surface-1); color: var(--text-1); padding: 8px 12px; border-radius: 12px; cursor: pointer; }
+.btn { border: 1px solid var(--surface-2); background: var(--surface-1); color: var(--text-1); padding: 8px 12px; border-radius: 12px; cursor: pointer; transition: all 0.2s; }
+.btn:hover { background: var(--surface-2); }
 .btn.primary { background: linear-gradient(180deg, var(--brand-400), var(--brand-500)); border-color: transparent; color: white; }
+.btn.icon { padding: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .lenControls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .len { display: grid; gap: 6px; background: var(--surface-1); border: 1px solid var(--surface-2); padding: 8px; border-radius: 12px; }
 .len span { font-weight: 600; }
 .len em { font-style: normal; color: var(--text-2); font-size: 12px; }
 
-/* Tasks */
 .tasks .taskList { display: grid; gap: 8px; margin-top: 8px; }
-.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; background: var(--surface-1); border: 1px solid var(--surface-2); }
-.task.done { opacity: .7; text-decoration: none; }
-.taskTitle { font-weight: 600; }
-.taskMeta { display: flex; gap: 6px; margin-top: 4px; }
-.pill { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--surface-3); font-size: 12px; text-transform: capitalize; }
-.pill.ghost { background: transparent; }
-.pill.high { background: color-mix(in oklab, var(--bad-500) 30%, transparent); border-color: var(--bad-500); }
-.pill.medium { background: color-mix(in oklab, var(--warn-500) 30%, transparent); border-color: var(--warn-500); }
-.pill.low { background: color-mix(in oklab, var(--ok-500) 30%, transparent); border-color: var(--ok-500); }
-.chk { width: 28px; height: 28px; border-radius: 999px; border: 1px solid var(--surface-3); background: var(--surface-1); color: var(--text-1); cursor: pointer; }
-.del { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--surface-3); background: var(--surface-1); color: var(--text-1); cursor: pointer; }
-.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 6px; }
-.input { border: 1px solid var(--surface-2); background: var(--surface-1); color: var(--text-1); padding: 10px 12px; border-radius: 12px; }
-.progressBar { height: 10px; background: var(--surface-1); border: 1px solid var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 12px; }
-.progressFill { height: 100%; background: linear-gradient(90deg, var(--ok-500), var(--brand-500)); }
+.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--surface-2); border-radius: 10px; background: var(--surface-1); transition: all 0.2s; }
+.task.done { opacity: 0.6; }
+.task.done .taskTitle { text-decoration: line-through; }
+.chk { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--text-2); background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--text-1); font-weight: bold; }
+.taskTitle { display: block; }
+.taskMeta { display: block; font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.del { background: transparent; border: 0; color: var(--text-2); font-size: 24px; cursor: pointer; width: 30px; height: 30px; }
+.composer { display: flex; gap: 8px; margin-top: 12px; }
+.input { flex: 1; padding: 8px; background: var(--surface-1); border: 1px solid var(--surface-2); border-radius: 8px; color: var(--text-1); }
+.progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+.progressBar { height: 100%; background: var(--ok-500); transition: width 0.3s; }
 
-/* Mood */
-.moodRow { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
-.moodBtns { display: flex; gap: 6px; }
-.face { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--surface-2); background: var(--surface-1); color: #fff; font-size: 20px; cursor: pointer; }
-.spark { display: grid; justify-items: start; }
+.mood { display: grid; gap: 12px; }
+.moodButtons { display: grid; gap: 8px; }
+.moodRow { display: flex; align-items: center; gap: 8px; }
+.moodBtn { width: 36px; height: 36px; border: 1px solid var(--surface-2); background: var(--surface-1); border-radius: 8px; cursor: pointer; font-size: 20px; }
 
-/* Bars */
-.bars { display: grid; grid-auto-flow: column; gap: 10px; align-items: end; height: 120px; }
-.bar { position: relative; width: 60px; height: 100%; background: var(--surface-1); border: 1px solid var(--surface-2); border-radius: 12px; display: grid; align-content: end; justify-items: center; overflow: hidden; }
-.barFill { width: 100%; background: linear-gradient(180deg, var(--brand-400), var(--brand-500)); border-radius: 12px 12px 0 0; }
-.barLabel { position: absolute; top: 6px; font-size: 12px; color: var(--text-2); text-transform: capitalize; }
-.barValue { font-weight: 700; margin-bottom: 6px; }
+.distractions { display: grid; gap: 12px; }
+.distButtons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.distBtn { padding: 8px; border: 1px solid var(--surface-2); background: var(--surface-1); border-radius: 8px; cursor: pointer; }
+.bars { display: flex; gap: 16px; align-items: flex-end; height: 80px; margin-top: 12px; }
+.bar { flex: 1; display: grid; gap: 4px; text-align: center; }
+.barFill { background: var(--brand-400); border-radius: 4px 4px 0 0; display: grid; place-items: center; color: white; font-size: 12px; font-weight: 600; }
+.barLabel { font-size: 11px; color: var(--text-2); }
 
-/* Timeline */
-.timeline { position: relative; height: 52px; border-radius: 14px; border: 1px solid var(--surface-2); background: var(--surface-1); overflow: clip; }
-.timeBlock { position: absolute; top: 0; bottom: 0; display: grid; place-items: center start; padding-inline: 8px; color: #fff; font-size: 12px; font-weight: 700; mix-blend-mode: screen; }
-.timeBlock span { text-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.bionic { grid-column: span 2; }
+@media (max-width: 1000px) { .bionic { grid-column: span 1; } }
 
-/* Breathing */
-.breathWrap { display: grid; place-items: center; margin-top: 10px; }
-.breathCircle { width: 120px; height: 120px; border-radius: 999px; border: 6px solid var(--brand-400); box-shadow: 0 0 40px color-mix(in oklab, var(--brand-500) 50%, transparent); animation: breathe 12s ease-in-out infinite; }
-@keyframes breathe { 0%{ transform: scale(0.9);} 33%{ transform: scale(1.05);} 66%{ transform: scale(1.05);} 100%{ transform: scale(0.9);} }
-.noMotion .breathCircle { animation: none; }
-.breathGuide { display: flex; gap: 10px; justify-content: center; margin-top: 6px; color: var(--text-2); font-size: 12px; }
+.timeline-section { grid-column: span 2; }
+@media (max-width: 1000px) { .timeline-section { grid-column: span 1; } }
+.timeline { position: relative; height: 40px; background: var(--surface-1); border-radius: 8px; margin: 12px 0; }
+.timeBlock { position: absolute; height: 100%; border-radius: 6px; display: grid; place-items: center; color: white; font-size: 12px; font-weight: 600; }
 
-/* Confetti */
-.confetti { position: absolute; width: 8px; height: 14px; background: hsl(var(--hue) 90% 60%); left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(0); border-radius: 2px; animation: fall .9s ease-out forwards, spin .9s linear forwards; }
-@keyframes fall { to { transform: translate(calc(-50% + (var(--sx,0px))), 220px) rotate(0); opacity: 0; } }
-@keyframes spin { from { rotate: 0deg; } to { rotate: 360deg; } }
+.breathing { display: grid; place-items: center; gap: 12px; margin-top: 16px; }
+.breathOuter { width: 80px; height: 80px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; }
+.breathCircle { width: 60px; height: 60px; border-radius: 50%; background: var(--brand-400); animation: breathe 12s infinite; }
+.breathOuter.noMotion .breathCircle { animation: none; }
+@keyframes breathe {
+  0%, 100% { transform: scale(0.7); }
+  33% { transform: scale(1); }
+  66% { transform: scale(1); }
+}
+.breathGuide { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); }
 
-.foot { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--surface-2); background: linear-gradient(0deg, rgba(0,0,0,.25), transparent); }
-kbd { background: var(--surface-1); border: 1px solid var(--surface-2); padding: 2px 6px; border-radius: 6px; }
+.foot { display: flex; align-items: center; padding: 16px 24px; border-top: 1px solid var(--surface-2); }
+
+.confetti { position: absolute; width: 10px; height: 10px; background: hsl(var(--hue), 80%, 60%); animation: confetti 1.5s ease-out forwards; pointer-events: none; }
+@keyframes confetti {
+  to { transform: translateY(-200px) rotate(720deg); opacity: 0; }
+}
+
+kbd { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+`;
+
+// ---------- Accessibility Styles ----------
+const accessibilityStyles = `
+:root[data-fontSize="small"] { font-size: 14px; }
+:root[data-fontSize="medium"] { font-size: 16px; }
+:root[data-fontSize="large"] { font-size: 18px; }
+:root[data-fontSize="xlarge"] { font-size: 20px; }
+
+:root[data-lineHeight="normal"] { line-height: 1.5; }
+:root[data-lineHeight="relaxed"] { line-height: 1.8; }
+:root[data-lineHeight="loose"] { line-height: 2.2; }
+`;
+
+// ---------- Bionic Reading Styles ----------
+const bionicStyles = `
+.bionic-text {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.bionic-word {
+  display: inline-block;
+  margin-right: 0.2em;
+}
+
+.bionic-bold {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.bionic-rest {
+  font-weight: 400;
+  opacity: 0.8;
+}
 `;

@@ -1,0 +1,319 @@
+import React, { useState, useEffect } from 'react';
+
+/**
+ * ReadingGuide Component
+ *
+ * Provides a visual guide line that follows the mouse cursor to help users
+ * with attention difficulties track their reading position. This is particularly
+ * helpful for users with dyslexia, ADHD, or other reading challenges.
+ *
+ * Features:
+ * - Horizontal guide line that follows cursor
+ * - Optional focus mode that dims surrounding text
+ * - Customizable colors and opacity
+ * - Keyboard navigation support
+ * - Auto-hide when not reading
+ */
+
+interface ReadingGuideProps {
+  color?: string;
+  opacity?: number;
+  height?: number;
+  focusMode?: boolean;
+  autoHide?: boolean;
+  autoHideDelay?: number;
+}
+
+export default function ReadingGuide({
+  color = '#FFD700',
+  opacity = 0.3,
+  height = 40,
+  focusMode = true,
+  autoHide = true,
+  autoHideDelay = 3000,
+}: ReadingGuideProps) {
+  const [position, setPosition] = useState({ x: 0, y: -100 });
+  const [isVisible, setIsVisible] = useState(false);
+  const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setPosition({ x: e.clientX, y: e.clientY });
+      setIsVisible(true);
+
+      // Reset auto-hide timer
+      if (autoHide) {
+        if (hideTimeout) {
+          clearTimeout(hideTimeout);
+        }
+        const timeout = setTimeout(() => {
+          setIsVisible(false);
+        }, autoHideDelay);
+        setHideTimeout(timeout);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Use arrow keys to move the guide
+      const step = 20;
+      let newY = position.y;
+
+      switch (e.key) {
+        case 'ArrowUp':
+          newY = Math.max(0, position.y - step);
+          break;
+        case 'ArrowDown':
+          newY = Math.min(window.innerHeight, position.y + step);
+          break;
+        case 'Escape':
+          setIsVisible(false);
+          return;
+      }
+
+      if (newY !== position.y) {
+        e.preventDefault();
+        setPosition({ ...position, y: newY });
+        setIsVisible(true);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
+      }
+    };
+  }, [position, autoHide, autoHideDelay, hideTimeout]);
+
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <>
+      <style>{`
+        .reading-guide-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 9999;
+        }
+
+        .reading-guide-line {
+          position: absolute;
+          width: 100%;
+          left: 0;
+          transition: top 0.1s ease-out;
+          pointer-events: none;
+        }
+
+        .reading-guide-overlay-top,
+        .reading-guide-overlay-bottom {
+          position: absolute;
+          width: 100%;
+          left: 0;
+          background: rgba(0, 0, 0, 0.3);
+          backdrop-filter: blur(2px);
+          pointer-events: none;
+          transition: opacity 0.3s ease;
+        }
+
+        .reading-guide-overlay-top {
+          top: 0;
+        }
+
+        .reading-guide-focus-area {
+          position: absolute;
+          width: 100%;
+          left: 0;
+          pointer-events: none;
+          box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+          background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(255, 215, 0, 0.05) 50%,
+            transparent 100%
+          );
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .reading-guide-line {
+            transition: none;
+          }
+        }
+
+        /* Accessibility: High contrast mode adjustments */
+        @media (prefers-contrast: high) {
+          .reading-guide-line {
+            border-top: 2px solid yellow !important;
+            border-bottom: 2px solid yellow !important;
+          }
+
+          .reading-guide-overlay-top,
+          .reading-guide-overlay-bottom {
+            background: rgba(0, 0, 0, 0.5);
+          }
+        }
+      `}</style>
+
+      <div className="reading-guide-container">
+        {focusMode && (
+          <>
+            {/* Top overlay */}
+            <div
+              className="reading-guide-overlay-top"
+              style={{
+                height: `${Math.max(0, position.y - height / 2)}px`,
+              }}
+            />
+
+            {/* Bottom overlay */}
+            <div
+              className="reading-guide-overlay-bottom"
+              style={{
+                top: `${position.y + height / 2}px`,
+                height: `${Math.max(0, window.innerHeight - position.y - height / 2)}px`,
+              }}
+            />
+
+            {/* Focus area highlight */}
+            <div
+              className="reading-guide-focus-area"
+              style={{
+                top: `${position.y - height / 2}px`,
+                height: `${height}px`,
+              }}
+            />
+          </>
+        )}
+
+        {/* Main guide line */}
+        <div
+          className="reading-guide-line"
+          style={{
+            top: `${position.y}px`,
+            height: '2px',
+            background: color,
+            opacity: opacity,
+            boxShadow: `0 0 10px ${color}`,
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
+/**
+ * ReadingRuler Component
+ *
+ * A simpler alternative that provides a static ruler overlay
+ * that can be manually positioned by the user.
+ */
+export function ReadingRuler({ enabled }: { enabled: boolean }) {
+  const [rulerPosition, setRulerPosition] = useState(200);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setRulerPosition(e.clientY);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, enabled]);
+
+  if (!enabled) return null;
+
+  return (
+    <>
+      <style>{`
+        .reading-ruler {
+          position: fixed;
+          width: 100%;
+          height: 60px;
+          left: 0;
+          background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(255, 215, 0, 0.1) 20%,
+            rgba(255, 215, 0, 0.2) 50%,
+            rgba(255, 215, 0, 0.1) 80%,
+            transparent 100%
+          );
+          border-top: 2px solid rgba(255, 215, 0, 0.5);
+          border-bottom: 2px solid rgba(255, 215, 0, 0.5);
+          z-index: 9998;
+          cursor: ns-resize;
+          transition: top 0.1s ease-out;
+        }
+
+        .reading-ruler:hover {
+          background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(255, 215, 0, 0.15) 20%,
+            rgba(255, 215, 0, 0.3) 50%,
+            rgba(255, 215, 0, 0.15) 80%,
+            transparent 100%
+          );
+        }
+
+        .reading-ruler-handle {
+          position: absolute;
+          top: 50%;
+          right: 10px;
+          transform: translateY(-50%);
+          width: 30px;
+          height: 30px;
+          background: rgba(255, 215, 0, 0.8);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: grab;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .reading-ruler-handle:active {
+          cursor: grabbing;
+        }
+
+        .reading-ruler-handle svg {
+          width: 16px;
+          height: 16px;
+          color: #333;
+        }
+      `}</style>
+
+      <div
+        className="reading-ruler"
+        style={{ top: `${rulerPosition - 30}px` }}
+        onMouseDown={() => setIsDragging(true)}
+      >
+        <div className="reading-ruler-handle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M7 10L12 5L17 10M7 14L12 19L17 14" />
+          </svg>
+        </div>
+      </div>
+    </>
+  );
+}
