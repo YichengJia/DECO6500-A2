@@ -1,19 +1,13 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import BionicReader from './BionicReader';
 
 /**
- * DocumentReader Component
+ * DocumentReader Component (Enhanced)
  *
- * Enhanced reading component that supports file uploads and clipboard paste.
- * Allows users to upload PDF, TXT, DOC files or paste text directly.
- * Integrates with Text-to-Speech and Bionic Reading features.
- *
- * Features:
- * - Drag and drop file upload
- * - PDF text extraction
- * - Clipboard paste support
- * - Text-to-Speech integration
- * - Bionic Reading conversion
+ * Enhanced reading component with:
+ * - Document deletion support
+ * - Voice selection for text-to-speech
+ * - Multiple file upload support
  * - Reading progress tracking
  */
 
@@ -31,8 +25,46 @@ export default function DocumentReader() {
   const [dragActive, setDragActive] = useState(false);
   const [bionicEnabled, setBionicEnabled] = useState(false);
   const [readingProgress, setReadingProgress] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Voice settings
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoice, setSelectedVoice] = useState<string>('');
+  const [speechRate, setSpeechRate] = useState(1.0);
+  const [speechPitch, setSpeechPitch] = useState(1.0);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  // Load available voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+
+      // Set default voice
+      if (availableVoices.length > 0 && !selectedVoice) {
+        // Try to find a voice in user's language
+        const userLang = navigator.language;
+        const matchingVoice = availableVoices.find(v => v.lang.startsWith(userLang.substring(0, 2)));
+        setSelectedVoice(matchingVoice?.name || availableVoices[0].name);
+      }
+    };
+
+    loadVoices();
+
+    // Chrome loads voices asynchronously
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, [selectedVoice]);
 
   // Handle drag events
   const handleDrag = (e: React.DragEvent) => {
@@ -56,7 +88,7 @@ export default function DocumentReader() {
     }
   };
 
-  // Extract text from PDF using PDF.js
+  // Extract text from PDF
   const extractPDFText = async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -64,9 +96,6 @@ export default function DocumentReader() {
       reader.onload = async (e) => {
         try {
           const typedArray = new Uint8Array(e.target?.result as ArrayBuffer);
-
-          // Simple PDF text extraction (for demo - in production use pdf.js library)
-          // This is a simplified version that extracts readable text from PDF buffer
           const decoder = new TextDecoder('utf-8');
           let text = decoder.decode(typedArray);
 
@@ -75,7 +104,6 @@ export default function DocumentReader() {
           let extractedText = '';
 
           textMatches.forEach(match => {
-            // Clean up PDF encoding artifacts
             const cleaned = match
               .replace(/stream|endstream/g, '')
               .replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
@@ -87,9 +115,8 @@ export default function DocumentReader() {
             }
           });
 
-          // If no text found in streams, try to find text in the file
+          // If no text found in streams, try to find text patterns
           if (!extractedText) {
-            // Look for common text patterns
             const textPatterns = text.match(/\((.*?)\)/g) || [];
             textPatterns.forEach(pattern => {
               const cleaned = pattern.slice(1, -1).trim();
@@ -99,7 +126,7 @@ export default function DocumentReader() {
             });
           }
 
-          resolve(extractedText || 'Unable to extract text from this PDF. Please try a different file.');
+          resolve(extractedText || 'Unable to extract text from this PDF. Please try a different file or use a PDF with selectable text.');
         } catch (error) {
           reject(error);
         }
@@ -124,8 +151,6 @@ export default function DocumentReader() {
       } else if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
         content = await file.text();
       } else if (file.name.endsWith('.doc') || file.name.endsWith('.docx')) {
-        // For Word documents, we'd need a library like mammoth.js
-        // For now, show a message
         content = 'Word document support coming soon. Please convert to PDF or TXT format.';
       } else {
         content = 'Unsupported file type. Please upload PDF or TXT files.';
@@ -163,7 +188,6 @@ export default function DocumentReader() {
         setActiveDocument(newDoc);
       }
     } catch (error) {
-      // Fallback to textarea paste
       if (textAreaRef.current) {
         textAreaRef.current.focus();
         document.execCommand('paste');
@@ -186,15 +210,42 @@ export default function DocumentReader() {
     }
   };
 
-  // Start Text-to-Speech for active document
+  // Delete document
+  const deleteDocument = (timestamp: number) => {
+    setDocuments(prev => prev.filter(doc => doc.timestamp !== timestamp));
+    if (activeDocument?.timestamp === timestamp) {
+      setActiveDocument(null);
+      stopSpeaking();
+    }
+  };
+
+  // Start Text-to-Speech with voice selection
   const speakDocument = () => {
     if (!activeDocument) return;
 
-    const utterance = new SpeechSynthesisUtterance(activeDocument.content);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
 
-    // Track reading progress
+    const utterance = new SpeechSynthesisUtterance(activeDocument.content);
+    utteranceRef.current = utterance;
+
+    // Set voice
+    const voice = voices.find(v => v.name === selectedVoice);
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    // Set speech parameters
+    utterance.rate = speechRate;
+    utterance.pitch = speechPitch;
+    utterance.volume = 1.0;
+
+    // Event handlers
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setIsPaused(false);
+    };
+
     utterance.onboundary = (event) => {
       if (activeDocument) {
         const progress = (event.charIndex / activeDocument.content.length) * 100;
@@ -204,16 +255,37 @@ export default function DocumentReader() {
 
     utterance.onend = () => {
       setReadingProgress(100);
+      setIsSpeaking(false);
+      setIsPaused(false);
     };
 
-    window.speechSynthesis.cancel();
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+    };
+
     window.speechSynthesis.speak(utterance);
+  };
+
+  // Pause/Resume speaking
+  const pauseResume = () => {
+    if (!isSpeaking) return;
+
+    if (isPaused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+    } else {
+      window.speechSynthesis.pause();
+      setIsPaused(true);
+    }
   };
 
   // Stop speaking
   const stopSpeaking = () => {
     window.speechSynthesis.cancel();
     setReadingProgress(0);
+    setIsSpeaking(false);
+    setIsPaused(false);
   };
 
   // Calculate reading time
@@ -364,6 +436,22 @@ export default function DocumentReader() {
           opacity: 0.7;
         }
         
+        .document-delete {
+          background: transparent;
+          border: none;
+          color: var(--bad-500);
+          font-size: 20px;
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: 4px;
+          transition: all 0.2s;
+        }
+        
+        .document-delete:hover {
+          background: var(--bad-500);
+          color: white;
+        }
+        
         .reader-zone {
           margin-top: 20px;
           padding: 20px;
@@ -415,6 +503,35 @@ export default function DocumentReader() {
           height: 100%;
           background: var(--brand-400);
           transition: width 0.3s;
+        }
+        
+        .voice-settings {
+          background: var(--surface-2);
+          border: 1px solid var(--surface-3);
+          border-radius: 12px;
+          padding: 16px;
+          margin-bottom: 16px;
+        }
+        
+        .voice-control {
+          margin-bottom: 12px;
+        }
+        
+        .voice-label {
+          display: block;
+          font-size: 12px;
+          color: var(--text-2);
+          margin-bottom: 4px;
+        }
+        
+        .voice-select {
+          width: 100%;
+          padding: 6px;
+          background: var(--surface-1);
+          border: 1px solid var(--surface-3);
+          border-radius: 6px;
+          color: var(--text-1);
+          font-size: 14px;
         }
         
         .reader-content {
@@ -479,7 +596,7 @@ export default function DocumentReader() {
           <div className="upload-icon">📄</div>
           <div className="upload-title">Drop your files here</div>
           <div className="upload-subtitle">
-            Supports PDF, TXT, DOC files or paste text directly
+            Supports PDF, TXT files or paste text directly
           </div>
 
           <div className="upload-buttons">
@@ -547,6 +664,18 @@ export default function DocumentReader() {
                     {new Date(doc.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
+                <button
+                  className="document-delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete "${doc.title}"?`)) {
+                      deleteDocument(doc.timestamp);
+                    }
+                  }}
+                  title="Delete document"
+                >
+                  🗑️
+                </button>
               </div>
             ))}
           </div>
@@ -556,24 +685,45 @@ export default function DocumentReader() {
         {activeDocument && (
           <div className="reader-zone">
             <div className="reader-controls">
+              {!isSpeaking ? (
+                <button
+                  className="reader-btn"
+                  onClick={speakDocument}
+                >
+                  <span>🔊</span> Read Aloud
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="reader-btn"
+                    onClick={pauseResume}
+                  >
+                    <span>{isPaused ? '▶️' : '⏸️'}</span>
+                    {isPaused ? 'Resume' : 'Pause'}
+                  </button>
+                  <button
+                    className="reader-btn"
+                    onClick={stopSpeaking}
+                  >
+                    <span>⏹️</span> Stop
+                  </button>
+                </>
+              )}
+
               <button
-                className="reader-btn"
-                onClick={speakDocument}
+                className={`reader-btn ${showVoiceSettings ? 'active' : ''}`}
+                onClick={() => setShowVoiceSettings(!showVoiceSettings)}
               >
-                <span>🔊</span> Read Aloud
+                <span>🎙️</span> Voice Settings
               </button>
-              <button
-                className="reader-btn"
-                onClick={stopSpeaking}
-              >
-                <span>⏹️</span> Stop
-              </button>
+
               <button
                 className={`reader-btn ${bionicEnabled ? 'active' : ''}`}
                 onClick={() => setBionicEnabled(!bionicEnabled)}
               >
                 <span>👁️</span> Bionic Reading
               </button>
+
               <div className="reading-progress">
                 <div
                   className="reading-progress-bar"
@@ -581,6 +731,52 @@ export default function DocumentReader() {
                 />
               </div>
             </div>
+
+            {/* Voice Settings Panel */}
+            {showVoiceSettings && (
+              <div className="voice-settings">
+                <div className="voice-control">
+                  <label className="voice-label">Voice</label>
+                  <select
+                    className="voice-select"
+                    value={selectedVoice}
+                    onChange={(e) => setSelectedVoice(e.target.value)}
+                  >
+                    {voices.map((voice) => (
+                      <option key={voice.name} value={voice.name}>
+                        {voice.name} ({voice.lang})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="voice-control">
+                  <label className="voice-label">Speed: {speechRate.toFixed(1)}x</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={speechRate}
+                    onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div className="voice-control">
+                  <label className="voice-label">Pitch: {speechPitch.toFixed(1)}</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={speechPitch}
+                    onChange={(e) => setSpeechPitch(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className={`reader-content ${bionicEnabled ? 'bionic' : ''}`}>
               {bionicEnabled ? (

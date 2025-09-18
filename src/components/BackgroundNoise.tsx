@@ -189,10 +189,7 @@ export default function BackgroundNoise() {
     };
   };
 
-  const startNoise = () => {
-    createNoiseGenerator(selectedNoise);
-    setIsPlaying(true);
-
+  const handleTimer = () => {
     // Start timer if set
     if (timer > 0) {
       setTimeRemaining(timer * 60);
@@ -211,38 +208,70 @@ export default function BackgroundNoise() {
     }
   };
 
-  const stopNoise = () => {
-    // Fade out smoothly
-    if (gainNodeRef.current && audioContextRef.current) {
-      const currentTime = audioContextRef.current.currentTime;
-      gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, currentTime);
-      gainNodeRef.current.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.5);
-
+  const startNoise = () => {
+    // Always clean up before starting new noise
+    if (isPlaying) {
+      stopNoise();
+      // Wait a bit for cleanup to complete
       setTimeout(() => {
-        // Disconnect nodes after fade out
-        if (processorRef.current) {
-          processorRef.current.disconnect();
-          processorRef.current.onaudioprocess = null;
-          processorRef.current = null;
-        }
-        if (sourceNodeRef.current) {
-          sourceNodeRef.current.disconnect();
-          sourceNodeRef.current = null;
-        }
-        if (gainNodeRef.current) {
-          gainNodeRef.current.disconnect();
-          gainNodeRef.current = null;
-        }
-      }, 600);
+        createNoiseGenerator(selectedNoise);
+        setIsPlaying(true);
+        handleTimer();
+      }, 100);
+    } else {
+      createNoiseGenerator(selectedNoise);
+      setIsPlaying(true);
+      handleTimer();
     }
+  };
 
-    setIsPlaying(false);
-    setTimeRemaining(0);
-
+  const stopNoise = () => {
+    // Clear timer first
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
+    // Stop audio with fade out
+    if (audioContextRef.current && gainNodeRef.current) {
+      try {
+        const currentTime = audioContextRef.current.currentTime;
+        gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, currentTime);
+        gainNodeRef.current.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.3);
+      } catch (e) {
+        // If ramp fails, set directly
+        if (gainNodeRef.current) {
+          gainNodeRef.current.gain.value = 0;
+        }
+      }
+
+      // Clean up nodes after fade
+      setTimeout(() => {
+        // Disconnect all nodes
+        if (processorRef.current) {
+          try {
+            processorRef.current.disconnect();
+            processorRef.current.onaudioprocess = null;
+          } catch (e) {}
+          processorRef.current = null;
+        }
+        if (sourceNodeRef.current) {
+          try {
+            sourceNodeRef.current.disconnect();
+          } catch (e) {}
+          sourceNodeRef.current = null;
+        }
+        if (gainNodeRef.current) {
+          try {
+            gainNodeRef.current.disconnect();
+          } catch (e) {}
+          gainNodeRef.current = null;
+        }
+      }, 400);
+    }
+
+    setIsPlaying(false);
+    setTimeRemaining(0);
   };
 
   // Update volume in real-time
@@ -344,11 +373,17 @@ export default function BackgroundNoise() {
                 <button
                   key={noise.id}
                   onClick={() => {
+                    const wasPlaying = isPlaying;
                     setSelectedNoise(noise.id);
                     localStorage.setItem('preferredNoise', noise.id);
-                    if (isPlaying) {
+                    if (wasPlaying) {
+                      // Stop current noise and wait before starting new one
                       stopNoise();
-                      setTimeout(() => startNoise(), 100);
+                      setTimeout(() => {
+                        createNoiseGenerator(noise.id);
+                        setIsPlaying(true);
+                        handleTimer();
+                      }, 200);
                     }
                   }}
                   style={{

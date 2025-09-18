@@ -252,32 +252,6 @@ export default function App() {
     phone: 0, chat: 0, snack: 0, noise: 0
   });
 
-  // Timeline blocks - dynamic based on current time
-  const blocks = useMemo(() => {
-    const now = new Date();
-    const hour = now.getHours();
-
-    // Generate realistic daily schedule
-    const schedule = [];
-
-    if (hour < 9) {
-      schedule.push({ label: "Morning Routine", start: "06:00", end: "09:00", color: "var(--warn-500)" });
-    }
-    schedule.push({ label: "Focus Block 1", start: "09:00", end: "10:30", color: "var(--brand-500)" });
-    schedule.push({ label: "Break", start: "10:30", end: "11:00", color: "var(--ok-500)" });
-    schedule.push({ label: "Focus Block 2", start: "11:00", end: "12:30", color: "var(--brand-500)" });
-    schedule.push({ label: "Lunch", start: "12:30", end: "13:30", color: "var(--warn-500)" });
-    schedule.push({ label: "Focus Block 3", start: "13:30", end: "15:00", color: "var(--brand-500)" });
-    schedule.push({ label: "Break", start: "15:00", end: "15:30", color: "var(--ok-500)" });
-    schedule.push({ label: "Focus Block 4", start: "15:30", end: "17:00", color: "var(--brand-500)" });
-
-    if (hour >= 17) {
-      schedule.push({ label: "Evening", start: "17:00", end: "22:00", color: "var(--warn-500)" });
-    }
-
-    return schedule;
-  }, []);
-
   // Timer tick
   useEffect(() => {
     if (running && remaining > 0) {
@@ -513,10 +487,12 @@ export default function App() {
           <DocumentReader />
         </section>
 
-        {/* Daily Timeline */}
-        <section className="card timeline-section">
-          <h3>Today Timeline</h3>
-          <Timeline blocks={blocks} />
+        {/* Breathing Coach */}
+        <section className="card breathing-section">
+          <h3>🧘 Mindful Breathing</h3>
+          <p className="muted" style={{ marginBottom: '16px' }}>
+            Practice 4-4-4 breathing to reduce stress and improve focus
+          </p>
           <BreathingCoach enabled={true} reduceMotion={reduceMotion} />
         </section>
       </main>
@@ -650,10 +626,8 @@ body { margin: 0; overflow-x: hidden; }
 .bionic { grid-column: span 2; }
 @media (max-width: 1000px) { .bionic { grid-column: span 1; } }
 
-.timeline-section { grid-column: span 2; }
-@media (max-width: 1000px) { .timeline-section { grid-column: span 1; } }
-.timeline { position: relative; height: 40px; background: var(--surface-1); border-radius: 8px; margin: 12px 0; }
-.timeBlock { position: absolute; height: 100%; border-radius: 6px; display: grid; place-items: center; color: white; font-size: 12px; font-weight: 600; }
+.breathing-section { grid-column: span 2; }
+@media (max-width: 1000px) { .breathing-section { grid-column: span 1; } }
 
 .breathing { display: grid; place-items: center; gap: 12px; margin-top: 16px; }
 .breathOuter { width: 80px; height: 80px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; }
